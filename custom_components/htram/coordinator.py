@@ -347,7 +347,7 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         packet.append((new_high >> 8) & 0xFF)
         packet.append(new_high & 0xFF)
         
-        # Screen Off (2 bytes Big Endian)
+        # Screen Off (2 bytes Big Endian) - Pass current value to preserve it (assuming 3rd arg is Screen Off)
         packet.append((new_screen_off >> 8) & 0xFF)
         packet.append(new_screen_off & 0xFF)
 
@@ -366,8 +366,25 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         self.async_update_listeners()
 
     async def async_set_screen_off(self, minutes: int):
-         """Set screen off timer."""
-         await self.async_set_alarm_thresholds(screen_off=minutes)
+         """Set screen off timer using dedicated command."""
+         # Use 'submitScreenOffTime' packet structure
+         # Header: 7B 41 00 0B 42 43 04 00 20 00 [VAL_HI] [VAL_LO] [CRC] 7D
+         # Magic: 20 00
+         
+         val_hi = (minutes >> 8) & 0xFF
+         val_lo = minutes & 0xFF
+         
+         packet = bytearray([0x7B, 0x41, 0x00, 0x0B, 0x42, 0x43, 0x04, 0x00, 0x20, 0x00, val_hi, val_lo])
+         
+         # CRC
+         crc = self._crc16(packet)
+         packet.append((crc >> 8) & 0xFF)
+         packet.append(crc & 0xFF)
+         packet.append(0x7D)
+         
+         await self._send_command(packet)
+         self.data["screen_off"] = minutes
+         self.async_update_listeners()
 
     async def async_sync_time(self):
         """Sync device time (UTC)."""
