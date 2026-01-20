@@ -49,7 +49,8 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def _async_verify_connection(self, discovery_info: BluetoothServiceInfo) -> dict[str, str] | None:
         """Verify we can connect and pair with the device."""
-        from bleak import BleakClient, BleakError
+        from bleak import BleakError
+        from bleak_retry_connector import establish_connection
         import asyncio
 
         device = bluetooth.async_ble_device_from_address(
@@ -59,7 +60,8 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
              return {"base": "cannot_connect"}
 
         try:
-            async with BleakClient(device) as client:
+            # use establish_connection for robust connection
+            async with establish_connection(BleakClient, device, device.address) as client:
                 if not client.is_connected:
                      return {"base": "cannot_connect"}
                 
@@ -68,10 +70,6 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
                     await client.pair()
                 except (BleakError, Exception) as e:
                     _LOGGER.warning(f"Pairing failed: {e}")
-                    # Allow proceeding even if pairing fails as some devices might not strictly require it 
-                    # or it might be already paired but throwing error.
-                    # But if auth fails later, we know why.
-                    # returning {"base": "pairing_failed"} 
                     pass
 
                 return None

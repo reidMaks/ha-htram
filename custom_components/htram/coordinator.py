@@ -63,8 +63,9 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
                 # But to keep it simple and standard compliant for HA, we should probably stick to `bleak_retry_connector` if available
                 # or just use BleakClient directly with the device object.
                 from bleak import BleakClient
+                from bleak_retry_connector import establish_connection
 
-                async with BleakClient(self.ble_device) as client:
+                async with establish_connection(BleakClient, self.ble_device, self.ble_device.address) as client:
                     self._client = client
                     
                     # Ensure paired
@@ -207,8 +208,9 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         # This is tricky because we might not be connected if we are outside the update loop.
         # We need a quick connection.
         from bleak import BleakClient
+        from bleak_retry_connector import establish_connection
         ble_device = bluetooth.async_ble_device_from_address(self.hass, self.address, connectable=True)
-        async with BleakClient(ble_device) as client:
+        async with establish_connection(BleakClient, ble_device, self.address) as client:
             await client.write_gatt_char(WRITE_UUID, command, response=False)
 
     async def async_set_screen_off(self, minutes: int):
