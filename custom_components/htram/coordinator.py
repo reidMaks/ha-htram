@@ -65,7 +65,9 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
                 from bleak import BleakClient
                 from bleak_retry_connector import establish_connection
 
+                _LOGGER.debug(f"Coordinator updating: Establishing connection to {self.address}")
                 async with establish_connection(BleakClient, self.ble_device, self.ble_device.address) as client:
+                    _LOGGER.debug(f"Coordinator connected: {client.is_connected}")
                     self._client = client
                     
                     # Ensure paired
@@ -210,8 +212,10 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         from bleak import BleakClient
         from bleak_retry_connector import establish_connection
         ble_device = bluetooth.async_ble_device_from_address(self.hass, self.address, connectable=True)
+        _LOGGER.debug(f"Sending command {command.hex()} to {self.address}")
         async with establish_connection(BleakClient, ble_device, self.address) as client:
             await client.write_gatt_char(WRITE_UUID, command, response=False)
+            _LOGGER.debug("Command sent successfully")
 
     async def async_set_screen_off(self, minutes: int):
          # Create command for screen off

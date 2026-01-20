@@ -49,25 +49,31 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def _async_verify_connection(self, discovery_info: BluetoothServiceInfo) -> dict[str, str] | None:
         """Verify we can connect and pair with the device."""
-        from bleak import BleakError
+        from bleak import BleakClient, BleakError
         from bleak_retry_connector import establish_connection
         import asyncio
 
+        _LOGGER.debug(f"Verifying connection to {discovery_info.address}")
         device = bluetooth.async_ble_device_from_address(
             self.hass, discovery_info.address, connectable=True
         )
         if not device:
+             _LOGGER.error(f"Device {discovery_info.address} not found in bluetooth cache")
              return {"base": "cannot_connect"}
 
         try:
             # use establish_connection for robust connection
+            _LOGGER.debug(f"Establishing connection to {device.address} using bleak_retry_connector")
             async with establish_connection(BleakClient, device, device.address) as client:
+                _LOGGER.debug(f"Connection established to {device.address}. Connected: {client.is_connected}")
                 if not client.is_connected:
                      return {"base": "cannot_connect"}
                 
                 # Try to pair if not bonded
                 try:
+                    _LOGGER.debug(f"Attempting to pair with {device.address}")
                     await client.pair()
+                    _LOGGER.debug(f"Pairing successful with {device.address}")
                 except (BleakError, Exception) as e:
                     _LOGGER.warning(f"Pairing failed: {e}")
                     pass
