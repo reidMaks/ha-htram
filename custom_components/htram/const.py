@@ -15,10 +15,8 @@ CMD_GET_REALTIME = b"\x7B\x41\x00\x07\x40\x44\x02\x00\xFC\x3E\x7D"
 CMD_GET_SOUND_STATUS = b"\x7B\x41\x00\x07\x26\x23\x01\x00\x09\xC0\x7D"
 
 # 7B 41 00 09 38 67 01 00 00 00 AB 63 7D (OFF)
-CMD_SET_SOUND_OFF = b"\x7B\x41\x00\x09\x38\x67\x01\x00\x00\x00\xAB\x63\x7D"
-# 7B 41 00 09 38 67 01 00 00 01 2B 66 7D (ON)
-CMD_SET_SOUND_ON = b"\x7B\x41\x00\x09\x38\x67\x01\x00\x00\x01\x2B\x66\x7D"
-
+# CMD_SET_SOUND* Removed - Calculated Dynamically
+ 
 # Screen Off
 # 7B 41 00 09 40 43 04 00 60 06 EF 17 7D (Read Settings - includes screen off)
 CMD_GET_SETTINGS = b"\x7B\x41\x00\x09\x40\x43\x04\x00\x60\x06\xEF\x17\x7D"

@@ -226,6 +226,7 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def async_set_mute(self, mute: bool):
         """Set mute state."""
+        # Use verified hardcoded packets from Java source
         cmd = CMD_SET_SOUND_OFF if mute else CMD_SET_SOUND_ON
         await self._send_command(cmd)
         self.data["mute"] = mute
@@ -362,8 +363,8 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
 
         # CRC
         crc = self._crc16(packet)
-        packet.append(crc & 0xFF)
         packet.append((crc >> 8) & 0xFF)
+        packet.append(crc & 0xFF)
         packet.append(0x7D)
 
         await self._send_command(packet)
@@ -396,8 +397,8 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
 
          # CRC
          crc = self._crc16(packet)
-         packet.append(crc & 0xFF)
          packet.append((crc >> 8) & 0xFF)
+         packet.append(crc & 0xFF)
          packet.append(0x7D)
          
          await self._send_command(packet)
@@ -425,21 +426,21 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         
         # CRC
         crc = self._crc16(packet)
-        packet.append(crc & 0xFF)
         packet.append((crc >> 8) & 0xFF)
+        packet.append(crc & 0xFF)
         packet.append(0x7D)
         
         await self._send_command(packet)
         _LOGGER.info("Synced time to device (UTC)")
 
     def _crc16(self, data: bytearray) -> int:
-        """Calculate CRC-16 (XMODEM) 0x1021."""
+        """Calculate CRC-16 (Poly 0x8005, Init 0, No Ref)."""
         crc = 0x0000
         for b in data:
             crc ^= (b << 8)
             for _ in range(8):
                 if crc & 0x8000:
-                    crc = (crc << 1) ^ 0x1021
+                    crc = (crc << 1) ^ 0x8005
                 else:
                     crc = crc << 1
                 crc &= 0xFFFF
