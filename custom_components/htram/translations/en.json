@@ -6,7 +6,7 @@
         },
         "error": {
             "cannot_connect": "Failed to connect",
-            "pairing_failed": "Pairing failed",
+            "pairing_failed": "Connection failed (Services not found). Please make sure to ACCEPT THE PAIRING/PIN REQUEST on your Home Assistant host/server!",
             "adapter_limit_reached": "Bluetooth adapter limit reached (too many connections). Try waiting or removing other devices.",
             "unknown": "Unexpected error"
         },

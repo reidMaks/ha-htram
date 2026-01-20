@@ -62,34 +62,34 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
              return {"base": "cannot_connect"}
 
         try:
-            # use establish_connection for robust connection
-            _LOGGER.debug(f"Establishing connection to {device.address} using bleak_retry_connector")
-            client = await establish_connection(BleakClient, device, device.address)
-            
-            try:
-                _LOGGER.debug(f"Connection established to {device.address}. Connected: {client.is_connected}")
-                if not client.is_connected:
-                     return {"base": "cannot_connect"}
-                
-                # Try to pair if not bonded
-                try:
-                    _LOGGER.debug(f"Attempting to pair with {device.address}")
-                    await client.pair()
-                    _LOGGER.debug(f"Pairing successful with {device.address}")
-                except (BleakError, Exception) as e:
-                    _LOGGER.warning(f"Pairing failed: {e}")
-                    pass
-            finally:
-                # Ensure we disconnect so we don't hold the connection
-                await client.disconnect()
+            # Revert to standard BleakClient for initial setup to avoid retry-connector complexity with pairing
+            # establish_connection can sometimes mask pairing needs or timeout differently
+            _LOGGER.debug(f"Establishing connection to {device.address} using BleakClient")
+            async with BleakClient(device, timeout=20.0) as client:
+                 _LOGGER.debug(f"Connection established to {device.address}. Connected: {client.is_connected}")
+                 if not client.is_connected:
+                      return {"base": "cannot_connect"}
+                 
+                 # Try to pair if not bonded
+                 try:
+                     _LOGGER.debug(f"Attempting to pair with {device.address}")
+                     await client.pair()
+                     _LOGGER.debug(f"Pairing successful with {device.address}")
+                 except (BleakError, Exception) as e:
+                     _LOGGER.warning(f"Pairing warning (might be already paired): {e}")
+                     # If pairing failed, we proceed, but correct auth is crucial
+                     pass
 
-            return None
+                 return None
+
 
         except BleakError as e:
             _LOGGER.error(f"Could not connect to HTRAM: {e}")
             msg = str(e).lower()
             if "no backend with an available connection slot" in msg:
                 return {"base": "adapter_limit_reached"}
+            if "failed to discover services" in msg:
+                return {"base": "pairing_failed"} # This usually means pairing didn't complete in time
             return {"base": "cannot_connect"}
         except Exception as e:
             _LOGGER.exception(f"Unexpected error connecting to HTRAM: {e}")
