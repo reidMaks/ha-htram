@@ -1,0 +1,71 @@
+{
+    "config": {
+        "abort": {
+            "already_configured": "Пристрій вже налаштовано",
+            "no_devices_found": "Не знайдено пристроїв HTRAM у мережі. Переконайтеся, що пристрій у режимі спарювання (подвійне натискання кнопки)."
+        },
+        "step": {
+            "bluetooth_confirm": {
+                "description": "Бажаете налаштувати {name}?",
+                "title": "Знайдено пристрій HTRAM"
+            },
+            "user": {
+                "data": {
+                    "address": "Пристрій"
+                },
+                "description": "Оберіть пристрій HTRAM для налаштування"
+            }
+        }
+    },
+    "entity": {
+        "sensor": {
+            "co2": {
+                "name": "CO2"
+            },
+            "temperature": {
+                "name": "Температура"
+            },
+            "humidity": {
+                "name": "Вологість"
+            },
+            "battery": {
+                "name": "Заряд батареї"
+            }
+        },
+        "binary_sensor": {
+            "charging": {
+                "name": "Заряджається"
+            }
+        },
+        "switch": {
+            "mute": {
+                "name": "Без звуку"
+            }
+        },
+        "number": {
+            "screen_off": {
+                "name": "Таймер вимкнення екрану"
+            },
+            "alarm_low": {
+                "name": "Поріг тривоги CO2 (Низький)"
+            },
+            "alarm_high": {
+                "name": "Поріг тривоги CO2 (Високий)"
+            }
+        },
+        "select": {
+            "temp_unit": {
+                "state": {
+                    "celsius": "Цельсій",
+                    "fahrenheit": "Фаренгейт"
+                },
+                "name": "Одиниці температури"
+            }
+        },
+        "button": {
+            "sync_time": {
+                "name": "Синхронізувати час"
+            }
+        }
+    }
+}

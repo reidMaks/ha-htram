@@ -1,0 +1,20 @@
+{
+    "config": {
+        "abort": {
+            "already_configured": "Device is already configured",
+            "no_devices_found": "No HTRAM devices found on the network. Make sure it is in pairing mode (double click button)."
+        },
+        "step": {
+            "bluetooth_confirm": {
+                "description": "Do you want to set up {name}?",
+                "title": "Discovered HTRAM Device"
+            },
+            "user": {
+                "data": {
+                    "address": "Device"
+                },
+                "description": "Select an HTRAM device to set up"
+            }
+        }
+    }
+}

@@ -1,0 +1,12 @@
+{
+  "domain": "htram",
+  "name": "Honeywell Transmission Risk Air Monitor (HTRAM)",
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": [
+    "bluetooth"
+  ],
+  "iot_class": "local_polling",
+  "requirements": [],
+  "version": "1.0.0"
+}

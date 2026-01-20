@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+.venv/
+
+# Parsing/Reverse Engineering Artifacts
+sources/
+resources/
+dist/
+build/
+*.apk
+*.zip
+scan_and_decompile.py
+analysis_output.txt
+
+# IDEs
+.idea/
+.vscode/
+
+# System
+.DS_Store
+Thumbs.db
