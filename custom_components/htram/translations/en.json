@@ -22,5 +22,56 @@
                 "description": "Select an HTRAM device to set up"
             }
         }
+    },
+    "entity": {
+        "sensor": {
+            "co2": {
+                "name": "CO2"
+            },
+            "temperature": {
+                "name": "Temperature"
+            },
+            "humidity": {
+                "name": "Humidity"
+            },
+            "battery": {
+                "name": "Battery Level"
+            }
+        },
+        "binary_sensor": {
+            "charging": {
+                "name": "Charging"
+            }
+        },
+        "switch": {
+            "mute": {
+                "name": "Mute"
+            }
+        },
+        "number": {
+            "screen_off": {
+                "name": "Screen Off Timer"
+            },
+            "alarm_low": {
+                "name": "CO2 Alarm Low"
+            },
+            "alarm_high": {
+                "name": "CO2 Alarm High"
+            }
+        },
+        "select": {
+            "temp_unit": {
+                "state": {
+                    "celsius": "Celsius",
+                    "fahrenheit": "Fahrenheit"
+                },
+                "name": "Temperature Unit"
+            }
+        },
+        "button": {
+            "sync_time": {
+                "name": "Sync Time"
+            }
+        }
     }
 }

@@ -24,7 +24,8 @@ class HTRAMTempUnitSelect(CoordinatorEntity, SelectEntity):
     def __init__(self, coordinator: HTRAMDataUpdateCoordinator) -> None:
         """Initialize."""
         super().__init__(coordinator)
-        self._attr_name = "HTRAM Temperature Unit"
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "temp_unit"
         self._attr_unique_id = f"{coordinator.address}_temp_unit"
         self._attr_options = ["Celsius", "Fahrenheit"]
         self._attr_icon = "mdi:thermometer-cog"

@@ -19,6 +19,10 @@ from .const import (
     CMD_GET_REALTIME,
     CMD_GET_SETTINGS,
     CMD_GET_SOUND_STATUS,
+    CMD_SET_SOUND_OFF,
+    CMD_SET_SOUND_ON,
+    CMD_SET_TEMP_UNIT_C,
+    CMD_SET_TEMP_UNIT_F,
     POLL_INTERVAL
 )
 
@@ -225,6 +229,14 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         cmd = CMD_SET_SOUND_OFF if mute else CMD_SET_SOUND_ON
         await self._send_command(cmd)
         self.data["mute"] = mute
+        self.async_update_listeners()
+
+    async def async_set_temp_unit(self, celsius: bool):
+        """Set temperature unit."""
+        cmd = CMD_SET_TEMP_UNIT_C if celsius else CMD_SET_TEMP_UNIT_F
+        await self._send_command(cmd)
+        # Update local state optimistically
+        self.data["temp_unit"] = "C" if celsius else "F"
         self.async_update_listeners()
 
     async def _send_command(self, command: bytes):

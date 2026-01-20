@@ -47,16 +47,24 @@ class HTRAMSensor(CoordinatorEntity, SensorEntity):
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._key = key
-        self._attr_name = f"HTRAM {name}"
+        self._attr_has_entity_name = True
+        self._attr_translation_key = key
         self._attr_unique_id = f"{coordinator.address}_{key}"
         self._attr_device_class = device_class
         self._attr_native_unit_of_measurement = unit
         self._attr_state_class = SensorStateClass.MEASUREMENT
+        
+        # Set precision
+        if device_class == SensorDeviceClass.TEMPERATURE:
+             self._attr_suggested_display_precision = 1
+        else:
+             self._attr_suggested_display_precision = 0
+
         self._attr_device_info = {
             "identifiers": {(DOMAIN, coordinator.address)},
             "name": "HTRAM Air Monitor",
             "manufacturer": "Honeywell",
-            "model": "HTRAM-RM", # Should probably fetch from SKU if possible
+            "model": "HTRAM-RM",
         }
 
     @property

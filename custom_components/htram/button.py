@@ -23,7 +23,8 @@ class HTRAMSyncTimeButton(CoordinatorEntity, ButtonEntity):
     def __init__(self, coordinator: HTRAMDataUpdateCoordinator) -> None:
         """Initialize."""
         super().__init__(coordinator)
-        self._attr_name = "HTRAM Sync Time"
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "sync_time"
         self._attr_unique_id = f"{coordinator.address}_sync_time"
         self._attr_icon = "mdi:clock-sync"
         self._attr_device_info = {

@@ -28,7 +28,8 @@ class HTRAMScreenOffNumber(CoordinatorEntity, NumberEntity):
     def __init__(self, coordinator: HTRAMDataUpdateCoordinator) -> None:
         """Initialize."""
         super().__init__(coordinator)
-        self._attr_name = "HTRAM Screen Off Timer"
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "screen_off"
         self._attr_unique_id = f"{coordinator.address}_screen_off"
         self._attr_native_unit_of_measurement = UnitOfTime.MINUTES
         self._attr_native_min_value = 0
@@ -54,7 +55,8 @@ class HTRAMAlarmLowNumber(CoordinatorEntity, NumberEntity):
     def __init__(self, coordinator: HTRAMDataUpdateCoordinator) -> None:
         """Initialize."""
         super().__init__(coordinator)
-        self._attr_name = "HTRAM CO2 Alarm Low"
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "alarm_low"
         self._attr_unique_id = f"{coordinator.address}_alarm_low"
         self._attr_native_step = 50
         self._attr_native_min_value = 400
@@ -77,7 +79,8 @@ class HTRAMAlarmHighNumber(CoordinatorEntity, NumberEntity):
     def __init__(self, coordinator: HTRAMDataUpdateCoordinator) -> None:
         """Initialize."""
         super().__init__(coordinator)
-        self._attr_name = "HTRAM CO2 Alarm High"
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "alarm_high"
         self._attr_unique_id = f"{coordinator.address}_alarm_high"
         self._attr_native_step = 50
         self._attr_native_min_value = 800
