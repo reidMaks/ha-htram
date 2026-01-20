@@ -65,73 +65,91 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
                 from bleak import BleakClient
                 from bleak_retry_connector import establish_connection
 
-                _LOGGER.debug(f"Coordinator updating: Establishing connection to {self.address}")
-                client = await establish_connection(BleakClient, self.ble_device, self.ble_device.address)
+                _LOGGER.debug(f"Coordinator updating: Check connection to {self.address}")
+                
+                # Check if we have a valid connected client
+                if self._client and self._client.is_connected:
+                     client = self._client
+                else:
+                     _LOGGER.debug(f"Coordinator updating: Establishing NEW connection to {self.address}")
+                     client = await establish_connection(BleakClient, self.ble_device, self.ble_device.address)
+                     self._client = client
+                
+                # We do NOT use a try...finally block with disconnect() anymore because we want persistence.
+                # However, we should handle if checking/using the client fails (e.g. BrokenPipe) which Bleak/RetryConnector usually handles via is_connected checks or exceptions.
+                
+                _LOGGER.debug(f"Coordinator connected: {client.is_connected}")
+
+                # Ensure paired - REMOVED per user request/issue with periodic blinking/re-auth loops.
+                # The bond should be persistent at OS level once established.
+                
+                # Subscribe to notifications
+                # We need a future to capture the data because notification is async
+                realtime_future = asyncio.Future()
+                settings_future = asyncio.Future()
+                sound_future = asyncio.Future()
+
+                def notification_handler(sender, data: bytearray):
+                    hex_data = data.hex()
+                    _LOGGER.debug(f"Received notification: {hex_data}")
+                    if len(data) < 6:
+                        return
+
+                    cmd_id = data[4:6].hex()
+                    
+                    if cmd_id == "4144": # Realtime
+                        if not realtime_future.done():
+                            realtime_future.set_result(data)
+                    elif cmd_id == "4143": # Settings (Alarm limits etc)
+                        if not settings_future.done():
+                            settings_future.set_result(data)
+                    elif cmd_id == "2723": # Sound status
+                        if not sound_future.done():
+                            sound_future.set_result(data)
+
+                # Re-subscribe? Bleak handles duplicate start_notify calls gracefully usually, or throws an error if already notifying.
+                # To be safe and simple for this "polling via notification" pattern on a persistent connection:
+                # We can stop notify at end of update (keeping connection open)
+                # OR keep notify open.
+                # If we keep notify open, we need to manage the handler not to be added valid multiple times?
+                # BleakClient.start_notify replaces the handler if called again on same char? 
+                # Actually typically it raises "AttributeError: ... already has a handler" or similar depending on backend.
+                # Safest approach for "Poll with Persistent Connection":
+                # 1. Start Notify
+                # 2. Write/Read
+                # 3. Stop Notify
+                # 4. Keep Connection Open
+                
+                await client.start_notify(NOTIFY_UUID, notification_handler)
+
+                # 1. Get Realtime Data
+                await client.write_gatt_char(WRITE_UUID, CMD_GET_REALTIME, response=False)
                 try:
-                    _LOGGER.debug(f"Coordinator connected: {client.is_connected}")
-                    self._client = client
+                    data = await asyncio.wait_for(realtime_future, timeout=5.0)
+                    self._parse_realtime(data)
+                except asyncio.TimeoutError:
+                    _LOGGER.warning("Timeout waiting for realtime data")
+
+                # 2. Get Sound Status
+                await client.write_gatt_char(WRITE_UUID, CMD_GET_SOUND_STATUS, response=False)
+                try:
+                    data = await asyncio.wait_for(sound_future, timeout=5.0)
+                    self._parse_sound(data)
+                except asyncio.TimeoutError:
+                    _LOGGER.warning("Timeout waiting for sound status")
                     
-                    # Ensure paired
-                    try:
-                        await client.pair()
-                    except Exception as e:
-                        _LOGGER.warning(f"Pairing warning: {e}")
+                # 3. Get Settings (Optional, maybe less frequent? But for now every poll to ensure state consistency)
+                await client.write_gatt_char(WRITE_UUID, CMD_GET_SETTINGS, response=False)
+                try:
+                    data = await asyncio.wait_for(settings_future, timeout=5.0)
+                    self._parse_settings(data)
+                except asyncio.TimeoutError:
+                        _LOGGER.warning("Timeout waiting for settings")
 
-                    
-                    # Subscribe to notifications
-                    # We need a future to capture the data because notification is async
-                    realtime_future = asyncio.Future()
-                    settings_future = asyncio.Future()
-                    sound_future = asyncio.Future()
+                await client.stop_notify(NOTIFY_UUID)
 
-                    def notification_handler(sender, data: bytearray):
-                        hex_data = data.hex()
-                        _LOGGER.debug(f"Received notification: {hex_data}")
-                        if len(data) < 6:
-                            return
-
-                        cmd_id = data[4:6].hex()
-                        
-                        if cmd_id == "4144": # Realtime
-                            if not realtime_future.done():
-                                realtime_future.set_result(data)
-                        elif cmd_id == "4143": # Settings (Alarm limits etc)
-                            if not settings_future.done():
-                                settings_future.set_result(data)
-                        elif cmd_id == "2723": # Sound status
-                            if not sound_future.done():
-                                sound_future.set_result(data)
-
-                    await client.start_notify(NOTIFY_UUID, notification_handler)
-
-                    # 1. Get Realtime Data
-                    await client.write_gatt_char(WRITE_UUID, CMD_GET_REALTIME, response=False)
-                    try:
-                        data = await asyncio.wait_for(realtime_future, timeout=5.0)
-                        self._parse_realtime(data)
-                    except asyncio.TimeoutError:
-                        _LOGGER.warning("Timeout waiting for realtime data")
-
-                    # 2. Get Sound Status
-                    await client.write_gatt_char(WRITE_UUID, CMD_GET_SOUND_STATUS, response=False)
-                    try:
-                        data = await asyncio.wait_for(sound_future, timeout=5.0)
-                        self._parse_sound(data)
-                    except asyncio.TimeoutError:
-                        _LOGGER.warning("Timeout waiting for sound status")
-                        
-                    # 3. Get Settings (Optional, maybe less frequent? But for now every poll to ensure state consistency)
-                    await client.write_gatt_char(WRITE_UUID, CMD_GET_SETTINGS, response=False)
-                    try:
-                        data = await asyncio.wait_for(settings_future, timeout=5.0)
-                        self._parse_settings(data)
-                    except asyncio.TimeoutError:
-                         _LOGGER.warning("Timeout waiting for settings")
-
-                    await client.stop_notify(NOTIFY_UUID)
-
-                finally:
-                    await client.disconnect()
+                # finally:
+                #    await client.disconnect()  <-- REMOVED to keep connection persistent
                     
             return self.data
 
@@ -217,12 +235,28 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         from bleak_retry_connector import establish_connection
         ble_device = bluetooth.async_ble_device_from_address(self.hass, self.address, connectable=True)
         _LOGGER.debug(f"Sending command {command.hex()} to {self.address}")
-        client = await establish_connection(BleakClient, ble_device, self.address)
-        try:
+        
+        # Reuse existing client if possible
+        if self._client and self._client.is_connected:
+            client = self._client
             await client.write_gatt_char(WRITE_UUID, command, response=False)
-            _LOGGER.debug("Command sent successfully")
-        finally:
-            await client.disconnect()
+            _LOGGER.debug("Command sent successfully (REUSED connection)")
+        else:
+             # If not connected during an action, we must connect.
+             # We should probably update self._client to keep it persistent too?
+            _LOGGER.debug("Sending command: Establishing NEW connection")
+            client = await establish_connection(BleakClient, ble_device, self.address)
+            self._client = client
+            try:
+                await client.write_gatt_char(WRITE_UUID, command, response=False)
+                _LOGGER.debug("Command sent successfully")
+            except Exception:
+                # If command fails, perhaps we should disconnect to be clean?
+                # But for now let's hope it stays open for next poll?
+                # Actually if we just opened it, we might want to keep it open for consistency with the new policy.
+                 raise
+            # finally:
+            #    await client.disconnect() <-- REMOVED
 
     async def async_set_screen_off(self, minutes: int):
          # Create command for screen off

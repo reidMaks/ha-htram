@@ -70,14 +70,28 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
                  if not client.is_connected:
                       return {"base": "cannot_connect"}
                  
-                 # Try to pair if not bonded
+                 # Implicit Pairing Strategy
+                 # On Linux/BlueZ, accessing a secure characteristic or enabling notifications
+                 # often triggers the pairing process more reliably than an explicit pair() call,
+                 # which can conflict if the OS is already initiating bonding during service discovery.
                  try:
-                     _LOGGER.debug(f"Attempting to pair with {device.address}")
-                     await client.pair()
-                     _LOGGER.debug(f"Pairing successful with {device.address}")
+                     _LOGGER.debug(f"Attempting to start notify on {device.address} to trigger auth")
+                     # We use the actual notify UUID. If it requires encryption, this triggers pairing.
+                     # We define a dummy handler just for this check.
+                     def _dummy_handler(sender, data):
+                         pass
+                     
+                     from .const import NOTIFY_UUID
+                     await client.start_notify(NOTIFY_UUID, _dummy_handler)
+                     _LOGGER.debug("Notifications enabled successfully")
+                     # Give a moment for any auth processes to settle
+                     await asyncio.sleep(2) 
+                     await client.stop_notify(NOTIFY_UUID)
+                     
                  except (BleakError, Exception) as e:
-                     _LOGGER.warning(f"Pairing warning (might be already paired): {e}")
-                     # If pairing failed, we proceed, but correct auth is crucial
+                     _LOGGER.warning(f"Notify setup warning (might need pairing): {e}")
+                     # If this failed, it might be because we need pairing but the prompt hasn't been answered yet.
+                     # We'll just catch it; correct timeout logic above usually handles the user delay.
                      pass
 
                  return None
