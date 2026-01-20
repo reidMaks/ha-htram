@@ -64,7 +64,9 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
         try:
             # use establish_connection for robust connection
             _LOGGER.debug(f"Establishing connection to {device.address} using bleak_retry_connector")
-            async with establish_connection(BleakClient, device, device.address) as client:
+            client = await establish_connection(BleakClient, device, device.address)
+            
+            try:
                 _LOGGER.debug(f"Connection established to {device.address}. Connected: {client.is_connected}")
                 if not client.is_connected:
                      return {"base": "cannot_connect"}
@@ -77,8 +79,11 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
                 except (BleakError, Exception) as e:
                     _LOGGER.warning(f"Pairing failed: {e}")
                     pass
+            finally:
+                # Ensure we disconnect so we don't hold the connection
+                await client.disconnect()
 
-                return None
+            return None
 
         except BleakError as e:
             _LOGGER.error(f"Could not connect to HTRAM: {e}")
