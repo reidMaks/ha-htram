@@ -94,7 +94,7 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
 
             # Check if it matches our device (Service UUID or Name prefix)
             # Service UUID check
-            if SERVICE_UUID.lower() in discovery_info.active_service_uuids or SERVICE_UUID.upper() in discovery_info.active_service_uuids:
+            if SERVICE_UUID.lower() in discovery_info.service_uuids or SERVICE_UUID.upper() in discovery_info.service_uuids:
                  self._discovered_devices[discovery_info.address] = discovery_info
             # Name Check backup
             elif discovery_info.name and (discovery_info.name.startswith("HTRAM") or discovery_info.name.startswith("Storm_Shadow")):
