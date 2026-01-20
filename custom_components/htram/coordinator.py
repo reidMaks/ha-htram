@@ -67,6 +67,13 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
                 async with BleakClient(self.ble_device) as client:
                     self._client = client
                     
+                    # Ensure paired
+                    try:
+                        await client.pair()
+                    except Exception as e:
+                        _LOGGER.warning(f"Pairing warning: {e}")
+
+                    
                     # Subscribe to notifications
                     # We need a future to capture the data because notification is async
                     realtime_future = asyncio.Future()

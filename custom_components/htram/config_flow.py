@@ -46,15 +46,61 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return await self.async_step_bluetooth_confirm()
 
+
+    async def _async_verify_connection(self, discovery_info: BluetoothServiceInfo) -> dict[str, str] | None:
+        """Verify we can connect and pair with the device."""
+        from bleak import BleakClient, BleakError
+        import asyncio
+
+        device = bluetooth.async_ble_device_from_address(
+            self.hass, discovery_info.address, connectable=True
+        )
+        if not device:
+             return {"base": "cannot_connect"}
+
+        try:
+            async with BleakClient(device) as client:
+                if not client.is_connected:
+                     return {"base": "cannot_connect"}
+                
+                # Try to pair if not bonded
+                try:
+                    await client.pair()
+                except (BleakError, Exception) as e:
+                    _LOGGER.warning(f"Pairing failed: {e}")
+                    # Allow proceeding even if pairing fails as some devices might not strictly require it 
+                    # or it might be already paired but throwing error.
+                    # But if auth fails later, we know why.
+                    # returning {"base": "pairing_failed"} 
+                    pass
+
+                return None
+
+        except BleakError as e:
+            _LOGGER.error(f"Could not connect to HTRAM: {e}")
+            msg = str(e).lower()
+            if "no backend with an available connection slot" in msg:
+                return {"base": "adapter_limit_reached"}
+            return {"base": "cannot_connect"}
+        except Exception as e:
+            _LOGGER.exception(f"Unexpected error connecting to HTRAM: {e}")
+            return {"base": "unknown"}
+
+
     async def async_step_bluetooth_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Confirm discovery."""
+        errors: dict[str, str] = {}
+        
         if user_input is not None:
-             return self.async_create_entry(
-                title=self._discovery_info.name or self._discovery_info.address,
-                data={}, # Data is empty, unique_id (address) is enough
-            )
+             errors_or_none = await self._async_verify_connection(self._discovery_info)
+             if not errors_or_none:
+                 return self.async_create_entry(
+                    title=self._discovery_info.name or self._discovery_info.address,
+                    data={},
+                )
+             errors = errors_or_none
 
         self._set_confirm_only()
         return self.async_show_form(
@@ -62,12 +108,15 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
             description_placeholders={
                 "name": self._discovery_info.name or self._discovery_info.address
             },
+            errors=errors,
         )
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the user step to pick discovered device."""
+        errors: dict[str, str] = {}
+        
         if user_input is not None:
             address = user_input[CONF_ADDRESS]
             await self.async_set_unique_id(address, raise_on_progress=False)
@@ -77,11 +126,14 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
             discovery_info = self._discovered_devices.get(address)
             if not discovery_info:
                  return self.async_abort(reason="no_devices_found")
-
-            return self.async_create_entry(
-                title=discovery_info.name or discovery_info.address,
-                data={},
-            )
+            
+            errors_or_none = await self._async_verify_connection(discovery_info)
+            if not errors_or_none:
+                return self.async_create_entry(
+                    title=discovery_info.name or discovery_info.address,
+                    data={},
+                )
+            errors = errors_or_none
 
         # Scan for devices with our Service UUID
         current_addresses = self._async_current_ids()
@@ -113,4 +165,5 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema({
                 vol.Required(CONF_ADDRESS): vol.In(titles),
             }),
+            errors=errors,
         )
