@@ -315,95 +315,59 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
          self.data["screen_off"] = minutes # Optimistic update
          self.async_update_listeners()
 
-    async def async_set_alarm_thresholds(self, low: int | None = None, high: int | None = None):
-        """Set alarm thresholds."""
-        # We need current values to partial update
+    async def async_set_alarm_thresholds(self, low: int | None = None, high: int | None = None, screen_off: int | None = None):
+        """Set alarm thresholds and screen off timer."""
+        # Get current values to fill in gaps
         current_low = self.data.get("alarm_low", 800)
         current_high = self.data.get("alarm_high", 1000)
         current_screen_off = self.data.get("screen_off", 0)
 
         new_low = low if low is not None else current_low
         new_high = high if high is not None else current_high
+        new_screen_off = screen_off if screen_off is not None else current_screen_off
 
         # Validate logic: Low < High
         if new_low >= new_high:
             _LOGGER.warning(f"Low threshold ({new_low}) must be less than High ({new_high})")
             return
 
-        # Build packet
-        # 0x4243
-        # 7B 41 00 0B 42 43 04 00 20 00 [Low] [High] [ScreenOff] [CRC] 7D
+        # Build packet using "submitAlertValue" structure (Full Update)
+        # Header: 7B 41 00 0F 42 43 04 00 40 06 [Lov V] [Hi V] [Screen V] [CRC] 7D
+        # Len: 0x0F (15)
+        # Cmd: 42 43
+        # Magic: 04 00 40 06 (Matches Java submitAlertValue)
         
-        # Bytes:
-        # 10: Low HighByte
-        # 11: Low LowByte
-        # 12: High HighByte
-        # 13: High LowByte
-        # 14: ScreenOff HighByte
-        # 15: ScreenOff LowByte
+        packet = bytearray([0x7B, 0x41, 0x00, 0x0F, 0x42, 0x43, 0x04, 0x00, 0x40, 0x06])
         
-        # Wait, from previous analysis of `MonitorPresenter` and `CMBLERequest`:
-        # public static byte[] submitAlertValue(int i, int i2, int i3)
-        # It sends ALL THREE: Low, High, ScreenOff. 
-        # So we must send screen_off too.
-        
-        packet = bytearray([0x7B, 0x41, 0x00, 0x0B, 0x42, 0x43, 0x04, 0x00, 0x20, 0x00])
-        
-        # Low
+        # Low (2 bytes Big Endian)
         packet.append((new_low >> 8) & 0xFF)
         packet.append(new_low & 0xFF)
         
-        # High
+        # High (2 bytes Big Endian)
         packet.append((new_high >> 8) & 0xFF)
         packet.append(new_high & 0xFF)
         
-        # Screen Off (Keep existing)
-        packet.append((current_screen_off >> 8) & 0xFF)
-        packet.append(current_screen_off & 0xFF)
+        # Screen Off (2 bytes Big Endian)
+        packet.append((new_screen_off >> 8) & 0xFF)
+        packet.append(new_screen_off & 0xFF)
 
-        # CRC
+        # CRC (Calculated on the first 16 bytes: Header(4) + Data(12))
         crc = self._crc16(packet)
         packet.append((crc >> 8) & 0xFF)
         packet.append(crc & 0xFF)
         packet.append(0x7D)
 
         await self._send_command(packet)
+        
+        # Optimistic update
         self.data["alarm_low"] = new_low
         self.data["alarm_high"] = new_high
+        self.data["screen_off"] = new_screen_off
         self.async_update_listeners()
 
     async def async_set_screen_off(self, minutes: int):
-         # Must preserve alarm thresholds
-         current_low = self.data.get("alarm_low", 800)
-         current_high = self.data.get("alarm_high", 1000)
-         
-         # Reuse set_alarm_thresholds logic or duplicate?
-         # Duplicating logic here slightly to keep it clear or refactor?
-         # Let's just build the packet.
-         
-         packet = bytearray([0x7B, 0x41, 0x00, 0x0B, 0x42, 0x43, 0x04, 0x00, 0x20, 0x00])
-         
-         # Low
-         packet.append((current_low >> 8) & 0xFF)
-         packet.append(current_low & 0xFF)
-         
-         # High
-         packet.append((current_high >> 8) & 0xFF)
-         packet.append(current_high & 0xFF)
-         
-         # Screen Off
-         packet.append((minutes >> 8) & 0xFF)
-         packet.append(minutes & 0xFF)
-
-         # CRC
-         crc = self._crc16(packet)
-         packet.append((crc >> 8) & 0xFF)
-         packet.append(crc & 0xFF)
-         packet.append(0x7D)
-         
-         await self._send_command(packet)
-         self.data["screen_off"] = minutes # Optimistic update
-         self.async_update_listeners()
+         """Set screen off timer."""
+         await self.async_set_alarm_thresholds(screen_off=minutes)
 
     async def async_sync_time(self):
         """Sync device time (UTC)."""
