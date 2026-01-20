@@ -17,37 +17,11 @@ async def async_setup_entry(
     """Set up the number platform."""
     coordinator: HTRAMDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities([
-        HTRAMScreenOffNumber(coordinator),
         HTRAMAlarmLowNumber(coordinator),
         HTRAMAlarmHighNumber(coordinator),
     ])
 
-class HTRAMScreenOffNumber(CoordinatorEntity, NumberEntity):
-    """Representation of HTRAM Screen Off Timer."""
 
-    def __init__(self, coordinator: HTRAMDataUpdateCoordinator) -> None:
-        """Initialize."""
-        super().__init__(coordinator)
-        self._attr_has_entity_name = True
-        self._attr_translation_key = "screen_off"
-        self._attr_unique_id = f"{coordinator.address}_screen_off"
-        self._attr_native_unit_of_measurement = UnitOfTime.MINUTES
-        self._attr_native_min_value = 0
-        self._attr_native_max_value = 120 # Assuming 120 minutes max or just a flag?
-        self._attr_native_step = 10 # Step by 10 makes sense?
-        self._attr_mode = NumberMode.BOX
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, coordinator.address)},
-        }
-
-    @property
-    def native_value(self) -> float | None:
-        """Return the value."""
-        return self.coordinator.data.get("screen_off", 0)
-
-    async def async_set_native_value(self, value: float) -> None:
-        """Set the value."""
-        await self.coordinator.async_set_screen_off(int(value))
 
 class HTRAMAlarmLowNumber(CoordinatorEntity, NumberEntity):
     """Representation of HTRAM CO2 Alarm Low Threshold."""

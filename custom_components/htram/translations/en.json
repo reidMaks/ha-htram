@@ -49,9 +49,6 @@
             }
         },
         "number": {
-            "screen_off": {
-                "name": "Screen Off Timer"
-            },
             "alarm_low": {
                 "name": "CO2 Alarm Low"
             },
@@ -66,6 +63,13 @@
                     "fahrenheit": "Fahrenheit"
                 },
                 "name": "Temperature Unit"
+            },
+            "screen_off": {
+                "state": {
+                    "always_on": "Always On",
+                    "auto_off_2_min": "Auto Off (2 min)"
+                },
+                "name": "Screen Off Timer"
             }
         },
         "button": {

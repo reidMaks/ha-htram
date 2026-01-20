@@ -14,8 +14,15 @@ CMD_GET_REALTIME = b"\x7B\x41\x00\x07\x40\x44\x02\x00\xFC\x3E\x7D"
 # 7B 41 00 07 26 23 01 00 09 C0 7D
 CMD_GET_SOUND_STATUS = b"\x7B\x41\x00\x07\x26\x23\x01\x00\x09\xC0\x7D"
 
-# 7B 41 00 09 38 67 01 00 00 00 AB 63 7D (OFF)
-# CMD_SET_SOUND* Removed - Calculated Dynamically
+# CMD_SET_SOUND_OFF (Verified from Java Source)
+# 7B 41 00 09 26 43 01 00 00 00 AB 63 7D
+CMD_SET_SOUND_OFF = b"\x7B\x41\x00\x09\x26\x43\x01\x00\x00\x00\xAB\x63\x7D"
+
+# CMD_SET_SOUND_ON (Derived from Java Source: submitAlarmSoundStatusOn)
+# Byte 10 is 1 (0x01). CRC is 43 102 -> 2B 66 (0x2B66)
+# Java: {123, 65, 0, 9, 38, 67, 1, 0, 0, 1, 43, 102, 125}
+# 43 = 0x2B. 102 = 0x66.
+CMD_SET_SOUND_ON = b"\x7B\x41\x00\x09\x26\x43\x01\x00\x00\x01\x2B\x66\x7D"
  
 # Screen Off
 # 7B 41 00 09 40 43 04 00 60 06 EF 17 7D (Read Settings - includes screen off)

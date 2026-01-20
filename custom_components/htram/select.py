@@ -16,7 +16,10 @@ async def async_setup_entry(
 ) -> None:
     """Set up the select platform."""
     coordinator: HTRAMDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([HTRAMTempUnitSelect(coordinator)])
+    async_add_entities([
+        HTRAMTempUnitSelect(coordinator),
+        HTRAMScreenOffSelect(coordinator),
+    ])
 
 class HTRAMTempUnitSelect(CoordinatorEntity, SelectEntity):
     """Representation of HTRAM Temperature Unit Select."""
@@ -43,3 +46,34 @@ class HTRAMTempUnitSelect(CoordinatorEntity, SelectEntity):
         """Change the selected option."""
         is_c = option == "Celsius"
         await self.coordinator.async_set_temp_unit(is_c)
+
+class HTRAMScreenOffSelect(CoordinatorEntity, SelectEntity):
+    """Representation of HTRAM Screen Off Select."""
+
+    def __init__(self, coordinator: HTRAMDataUpdateCoordinator) -> None:
+        """Initialize."""
+        super().__init__(coordinator)
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "screen_off"
+        self._attr_unique_id = f"{coordinator.address}_screen_off"
+        self._attr_options = ["Always On", "Auto Off (2 min)"]
+        self._attr_icon = "mdi:monitor-off"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, coordinator.address)},
+        }
+
+    @property
+    def current_option(self) -> str | None:
+        """Return the current option."""
+        # Value from coordinator is int (minutes or seconds?)
+        # Java uses 120 (seconds?) for Auto Off, 0 for Always On.
+        # Coordinator reads value from device.
+        val = self.coordinator.data.get("screen_off", 0)
+        # Assuming 0 is Always On, anything else is Auto Off (usually 120)
+        return "Always On" if val == 0 else "Auto Off (2 min)"
+
+    async def async_select_option(self, option: str) -> None:
+        """Change the selected option."""
+        # Map option to value
+        val = 0 if option == "Always On" else 120
+        await self.coordinator.async_set_screen_off(val)
