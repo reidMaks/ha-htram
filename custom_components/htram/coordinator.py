@@ -23,6 +23,7 @@ from .const import (
     CMD_SET_SOUND_ON,
     CMD_SET_TEMP_UNIT_C,
     CMD_SET_TEMP_UNIT_F,
+    CMD_HEARTBEAT,
     POLL_INTERVAL
 )
 
@@ -125,6 +126,12 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
                 # 4. Keep Connection Open
                 
                 await client.start_notify(NOTIFY_UUID, notification_handler)
+
+                # 0. Send Heartbeat (Keep Alive)
+                # This might prevent the device from sleeping or disconnecting
+                await client.write_gatt_char(WRITE_UUID, CMD_HEARTBEAT, response=False)
+                # Small pause?
+                await asyncio.sleep(0.5)
 
                 # 1. Get Realtime Data
                 await client.write_gatt_char(WRITE_UUID, CMD_GET_REALTIME, response=False)
