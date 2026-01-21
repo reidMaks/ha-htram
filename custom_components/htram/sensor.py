@@ -12,6 +12,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
@@ -65,6 +66,7 @@ class HTRAMSensor(CoordinatorEntity, SensorEntity):
             "name": "HTRAM Air Monitor",
             "manufacturer": "Honeywell",
             "model": "HTRAM-RM",
+            "connections": {(dr.CONNECTION_BLUETOOTH, coordinator.address)},
         }
 
     @property
