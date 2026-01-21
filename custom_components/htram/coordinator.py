@@ -53,26 +53,17 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
             if ble_device:
                 self.ble_device = ble_device
 
-            async with async_timeout.timeout(20):
+            # Use a larger timeout for the entire update cycle
+            async with async_timeout.timeout(30):
                 if not self._client or not self._client.is_connected:
-                     # Create new client
-                     # Note: In a real component using bluetooth library, we would use context managers 
-                     # but here we need persistence or re-connection logic. 
-                     # For simple polling, connecting each time or keeping connection is a choice. 
-                     # Given the instability of some BLE devices, a connect-poll-disconnect cycle might be safer 
-                     # OR properly managed persistent connection.
-                     # Let's try to establish a connection context just for this update for robustness first.
+                     # Connect will happen below
                      pass
 
-                # We will use the `bluetooth` helper utilities to connect
-                # But to keep it simple and standard compliant for HA, we should probably stick to `bleak_retry_connector` if available
-                # or just use BleakClient directly with the device object.
                 from bleak import BleakClient
                 from bleak_retry_connector import establish_connection
 
                 _LOGGER.debug(f"Coordinator updating: Check connection to {self.address}")
                 
-                # Check if we have a valid connected client
                 if self._client and self._client.is_connected:
                      client = self._client
                 else:
@@ -80,16 +71,9 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
                      client = await establish_connection(BleakClient, self.ble_device, self.ble_device.address)
                      self._client = client
                 
-                # We do NOT use a try...finally block with disconnect() anymore because we want persistence.
-                # However, we should handle if checking/using the client fails (e.g. BrokenPipe) which Bleak/RetryConnector usually handles via is_connected checks or exceptions.
-                
                 _LOGGER.debug(f"Coordinator connected: {client.is_connected}")
 
-                # Ensure paired - REMOVED per user request/issue with periodic blinking/re-auth loops.
-                # The bond should be persistent at OS level once established.
-                
-                # Subscribe to notifications
-                # We need a future to capture the data because notification is async
+                # Future objects for async responses
                 realtime_future = asyncio.Future()
                 settings_future = asyncio.Future()
                 sound_future = asyncio.Future()
@@ -105,33 +89,21 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
                     if cmd_id == "4144": # Realtime
                         if not realtime_future.done():
                             realtime_future.set_result(data)
-                    elif cmd_id == "4143": # Settings (Alarm limits etc)
+                    elif cmd_id == "4143": # Settings
                         if not settings_future.done():
                             settings_future.set_result(data)
                     elif cmd_id == "2723": # Sound status
                         if not sound_future.done():
                             sound_future.set_result(data)
 
-                # Re-subscribe? Bleak handles duplicate start_notify calls gracefully usually, or throws an error if already notifying.
-                # To be safe and simple for this "polling via notification" pattern on a persistent connection:
-                # We can stop notify at end of update (keeping connection open)
-                # OR keep notify open.
-                # If we keep notify open, we need to manage the handler not to be added valid multiple times?
-                # BleakClient.start_notify replaces the handler if called again on same char? 
-                # Actually typically it raises "AttributeError: ... already has a handler" or similar depending on backend.
-                # Safest approach for "Poll with Persistent Connection":
-                # 1. Start Notify
-                # 2. Write/Read
-                # 3. Stop Notify
-                # 4. Keep Connection Open
-                
+                # Start notifying
                 await client.start_notify(NOTIFY_UUID, notification_handler)
 
-                # 0. Send Heartbeat (Keep Alive)
-                # This might prevent the device from sleeping or disconnecting
+                # 0. Send Heartbeat
                 await client.write_gatt_char(WRITE_UUID, CMD_HEARTBEAT, response=False)
-                # Small pause?
                 await asyncio.sleep(0.5)
+
+                timeout_occurred = False
 
                 # 1. Get Realtime Data
                 await client.write_gatt_char(WRITE_UUID, CMD_GET_REALTIME, response=False)
@@ -140,6 +112,7 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
                     self._parse_realtime(data)
                 except asyncio.TimeoutError:
                     _LOGGER.warning("Timeout waiting for realtime data")
+                    timeout_occurred = True
 
                 # 2. Get Sound Status
                 await client.write_gatt_char(WRITE_UUID, CMD_GET_SOUND_STATUS, response=False)
@@ -148,53 +121,59 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
                     self._parse_sound(data)
                 except asyncio.TimeoutError:
                     _LOGGER.warning("Timeout waiting for sound status")
-                    
-                # 3. Get Settings (Optional, maybe less frequent? But for now every poll to ensure state consistency)
+                    # Non-critical, but note it
+
+                # 3. Get Settings
                 await client.write_gatt_char(WRITE_UUID, CMD_GET_SETTINGS, response=False)
                 try:
                     data = await asyncio.wait_for(settings_future, timeout=5.0)
                     self._parse_settings(data)
                 except asyncio.TimeoutError:
-                        _LOGGER.warning("Timeout waiting for settings")
+                    _LOGGER.warning("Timeout waiting for settings")
+                    # Non-critical
 
                 await client.stop_notify(NOTIFY_UUID)
 
-                # finally:
-                #    await client.disconnect()  <-- REMOVED to keep connection persistent
-                    
+                # If we had a timeout on realtime data, our connection might be bad.
+                # Recycle the client to force a fresh connection next time.
+                if timeout_occurred:
+                    _LOGGER.debug("Timeouts occurred, forcing client recycle")
+                    await self._cleanup_client()
+
             return self.data
 
+        except asyncio.TimeoutError:
+            await self._cleanup_client()
+            raise UpdateFailed("Update timed out")
         except BleakError as func_call_error:
+            await self._cleanup_client()
             raise UpdateFailed(f"Bluetooth error: {func_call_error}") from func_call_error
         except Exception as e:
-            raise UpdateFailed(f"Unexpected error: {e}") from e
+            await self._cleanup_client()
+            raise UpdateFailed(f"Unexpected error: {repr(e)}") from e
+
+    async def _cleanup_client(self):
+        """Clean up the client connection."""
+        if self._client:
+            try:
+                await self._client.disconnect()
+            except Exception:
+                pass
+            self._client = None
 
     def _parse_realtime(self, data: bytearray):
-        # Format: ... 41 44 04 00 [CO2_HI] [CO2_LO] [TEMP] [HUM] [BATT] [CHG] ...
-        # Indices based on previous analysis:
-        # CO2: 7, 8
-        # Temp: 9
-        # Hum: 10
-        # Batt: 11
-        # Chg: 12
+        # Validation
+        if len(data) < 13:
+            _LOGGER.warning(f"Realtime data too short: {len(data)}")
+            return
+
         co2 = int.from_bytes(data[7:9], byteorder='big')
         temp = data[9]
         if temp > 128:
-            temp = temp - 256 # Assuming standard signed byte conversion if needed, but checked java code: if > 128, val += SOURCE_ANY? 
-            # Java: if (num.intValue() > 128) num = Integer.valueOf(num.intValue() + InputDeviceCompat.SOURCE_ANY); 
-            # InputDeviceCompat.SOURCE_ANY is 0xFFFFFF00 (-256). 
-            # So if value is 129, it becomes 129 - 256 = -127. Correct, it's a signed byte interpretation.
-            pass
+            temp = temp - 256
         
         hum = data[10]
-        batt_level = data[11] # 0-4 bars
-        
-        # Map bars to percentage (approximate)
-        # 0 -> 0%
-        # 1 -> 25%
-        # 2 -> 50%
-        # 3 -> 75%
-        # 4 -> 100%
+        batt_level = data[11]
         batt = batt_level * 25
         if batt > 100:
             batt = 100
@@ -205,24 +184,20 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         self.data["temperature"] = temp
         self.data["humidity"] = hum
         self.data["battery"] = batt
-        self.data["charging"] = charging == 1 # 1 = charging? Java: `showChargeStatue(getValue(bArr6))`
+        self.data["charging"] = charging == 1
 
     def _parse_sound(self, data: bytearray):
-        # 27 23 ... [STATE at 9]
-        is_off = data[9] == 0 # 0 = OFF, 1 = ON based on `showMuteState("0".equals(value))`
+        if len(data) < 10:
+             _LOGGER.warning(f"Sound data too short: {len(data)}")
+             return
+        is_off = data[9] == 0 
         self.data["mute"] = is_off 
 
     def _parse_settings(self, data: bytearray):
-        # 41 43 ... 
-        # Low: 7,8
-        # High: 9,10
-        # Delay (or something): 11,12 - Wait, java says `delay`
-        
-        # Java:
-        # bArr2 (Low) -> 7, 2 bytes
-        # bArr3 (High) -> 9, 2 bytes
-        # bArr4 (Delay?) -> 11, 2 bytes
-        
+        if len(data) < 13:
+             _LOGGER.warning(f"Settings data too short: {len(data)}")
+             return
+
         low = int.from_bytes(data[7:9], byteorder='big')
         high = int.from_bytes(data[9:11], byteorder='big')
         screen_off = int.from_bytes(data[11:13], byteorder='big')

@@ -68,7 +68,10 @@ class HTRAMScreenOffSelect(CoordinatorEntity, SelectEntity):
         # Value from coordinator is int (minutes or seconds?)
         # Java uses 120 (seconds?) for Auto Off, 0 for Always On.
         # Coordinator reads value from device.
-        val = self.coordinator.data.get("screen_off", 0)
+        if "screen_off" not in self.coordinator.data:
+            return None
+            
+        val = self.coordinator.data["screen_off"]
         # Assuming 0 is Always On, anything else is Auto Off (usually 120)
         return "Always On" if val == 0 else "Auto Off (2 min)"
 
