@@ -24,8 +24,10 @@ from .const import (
     CMD_SET_TEMP_UNIT_C,
     CMD_SET_TEMP_UNIT_F,
     CMD_HEARTBEAT,
+    CMD_HEARTBEAT,
     POLL_INTERVAL
 )
+from . import utils
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -396,15 +398,16 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         await self._send_command(packet)
         _LOGGER.info("Synced time to device (UTC)")
 
-    def _crc16(self, data: bytearray) -> int:
-        """Calculate CRC-16 (Poly 0x8005, Init 0, No Ref)."""
-        crc = 0x0000
-        for b in data:
-            crc ^= (b << 8)
-            for _ in range(8):
-                if crc & 0x8000:
-                    crc = (crc << 1) ^ 0x8005
-                else:
-                    crc = crc << 1
-                crc &= 0xFFFF
         return crc 
+
+    async def async_provision_wifi(self, ssid: str, password: str):
+        """Provision WiFi credentials."""
+        packet = utils.construct_submit_ssid(ssid, password)
+        _LOGGER.debug(f"Provisioning WiFi: {ssid}")
+        await self._send_command(packet)
+
+    async def async_provision_mqtt(self, mqtt_server: str, aes_key: str, aes_iv: str):
+        """Provision custom MQTT server."""
+        packet = utils.construct_submit_aes_key(aes_key, aes_iv, mqtt_server)
+        _LOGGER.debug(f"Provisioning MQTT: {mqtt_server}")
+        await self._send_command(packet)

@@ -1,0 +1,35 @@
+configure_device:
+  name: Configure Device
+  description: Provision WiFi or MQTT credentials to the HTRAM device.
+  fields:
+    ssid:
+      name: WiFi SSID
+      description: The name of the WiFi network to connect to.
+      required: false
+      selector:
+        text:
+    password:
+      name: WiFi Password
+      description: The password for the WiFi network.
+      required: false
+      selector:
+        text:
+          type: password
+    mqtt_server:
+      name: MQTT Server
+      description: Custom MQTT Server URL (e.g., tcp://192.168.1.10:1883).
+      required: false
+      selector:
+        text:
+    aes_key:
+      name: AES Key
+      description: AES Key for encryption (16 chars or Base64). Leave empty to use device default if applicable.
+      required: false
+      selector:
+        text:
+    aes_iv:
+      name: AES IV
+      description: AES Initialization Vector (16 chars).
+      required: false
+      selector:
+        text:
