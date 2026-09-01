@@ -876,7 +876,8 @@ tap shows the modem handing each message to the GD32:
 +MQTTSUBRECV:0,"D/RM1221412257",19,{A BC @   x  }
 ```
 
-Six candidates were delivered intact and **none had any effect**:
+Eighteen candidates were delivered intact and **none had any effect**. The
+first batch varied the framing:
 
 | Candidate | Result |
 | --- | --- |
@@ -887,9 +888,33 @@ Six candidates were delivered intact and **none had any effect**:
 | AES-128-CBC(key, iv) of a BLE frame, zero pad | delivered, no change |
 | AES-128-ECB(key) of a BLE frame, zero pad | delivered, no change |
 
-The temperature-unit command is the cheapest probe: a successful one would show
-up as ~77 in the telemetry instead of ~25, with no BLE session needed. It never
-did.
+The second batch varied the cipher mode, with the provisioned key
+(`0123456789abcdef`, the Base64 default from `--aes-key`) and IV
+(`0123456789abcdef`, sent as raw ASCII — so key and IV happen to be equal):
+
+| Candidate | Result |
+| --- | --- |
+| CBC with a zero IV | delivered, no change |
+| CBC over opcode + body only, no `7B`/`7D` | delivered, no change |
+| ECB over opcode + body only | delivered, no change |
+| CTR | delivered, no change |
+| CFB | delivered, no change |
+| `DC` envelope wrapping the encrypted frame | delivered, no change |
+
+The third batch tried the encodings a text-oriented cloud would plausibly use:
+
+| Candidate | Result |
+| --- | --- |
+| Base64 of a BLE frame | delivered, no change |
+| hex-ASCII of a BLE frame, lower and upper case | delivered, no change |
+| Base64 of AES-128-CBC ciphertext | delivered, no change |
+| IV prepended to the ciphertext | delivered, no change |
+| serial number prepended to a BLE frame | delivered, no change |
+
+Every probe used `submitTemperatureUnit(F)` — the cheapest command to judge,
+because the front panel shows the unit and the answer needs no BLE session.
+The panel stayed on °C throughout, and the telemetry temperature field never
+moved off its °C value either.
 
 So the GD32 receives downlink messages and discards them — the wire format is
 neither a bare vendor frame nor that frame encrypted with the provisioned key
