@@ -24,7 +24,9 @@ class HTRAMChargingSensor(HtramEntity, BinarySensorEntity):
     def __init__(self, coordinator: HTRAMDataUpdateCoordinator) -> None:
         """Initialize."""
         super().__init__(coordinator)
-        self._attr_name = "HTRAM Charging"
+        # A literal name plus has_entity_name gave
+        # binary_sensor.htram_air_monitor_htram_charging.
+        self._attr_translation_key = "charging"
         self._attr_unique_id = f"{coordinator.address}_charging"
         self._attr_device_class = BinarySensorDeviceClass.BATTERY_CHARGING
 
