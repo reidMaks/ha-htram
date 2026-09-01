@@ -32,13 +32,9 @@ MQTT_STALE_AFTER = 300
 # Keys the MQTT payload carries. Everything else stays on Bluetooth.
 MQTT_KEYS = ("co2", "temperature", "humidity")
 
-# Built once at import: the bodies never vary.
+# Built once at import: these have no arguments, so the frames never vary.
+# Commands that take a value are built at the call site from protocol.
 CMD_GET_REALTIME = protocol.realtime()
 CMD_HEARTBEAT = protocol.heartbeat()
 CMD_GET_SOUND_STATUS = protocol.sound_status()
-CMD_SET_SOUND_OFF = protocol.set_sound(False)
-CMD_SET_SOUND_ON = protocol.set_sound(True)
 CMD_GET_SETTINGS = protocol.settings()
-CMD_GET_TEMP_UNIT = protocol.temperature_unit()
-CMD_SET_TEMP_UNIT_C = protocol.set_temperature_unit(True)
-CMD_SET_TEMP_UNIT_F = protocol.set_temperature_unit(False)

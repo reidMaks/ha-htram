@@ -243,3 +243,20 @@ def test_decode_telemetry_rejects_foreign_payloads():
     assert p.decode_telemetry(b"") is None
     assert p.decode_telemetry(b"not a telemetry payload!!!!") is None
     assert p.decode_telemetry(bytes(27)) is None
+
+
+def test_iter_frames_survives_a_split_frame():
+    """A frame arriving in two notifications must still be seen.
+
+    The device answers with more bytes than a single BLE notification carries,
+    so the buffer has to be accumulated rather than matched packet by packet.
+    """
+    whole = bytes.fromhex("7b410007750002007d647d")
+    first, second = whole[:6], whole[6:]
+    assert list(p.iter_frames(first)) == []
+    assert list(p.iter_frames(first + second)) == [whole]
+
+
+def test_iter_frames_finds_a_frame_after_leading_noise():
+    whole = bytes.fromhex("7b410006250101f8357d")
+    assert list(p.iter_frames(b"\x00\xff" + whole)) == [whole]

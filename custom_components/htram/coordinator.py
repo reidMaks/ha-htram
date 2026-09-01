@@ -3,7 +3,7 @@ import asyncio
 import base64
 import time
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
@@ -16,17 +16,11 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .const import (
     DOMAIN,
-    SERVICE_UUID,
     WRITE_UUID,
     NOTIFY_UUID,
     CMD_GET_REALTIME,
     CMD_GET_SETTINGS,
     CMD_GET_SOUND_STATUS,
-    CMD_SET_SOUND_OFF,
-    CMD_SET_SOUND_ON,
-    CMD_SET_TEMP_UNIT_C,
-    CMD_SET_TEMP_UNIT_F,
-    CMD_HEARTBEAT,
     CMD_HEARTBEAT,
     MQTT_KEYS,
     MQTT_STALE_AFTER,
@@ -154,23 +148,31 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
                 settings_future = asyncio.Future()
                 sound_future = asyncio.Future()
 
-                def notification_handler(sender, data: bytearray):
-                    hex_data = data.hex()
-                    _LOGGER.debug(f"Received notification: {hex_data}")
-                    if len(data) < 6:
-                        return
+                # One notification can carry several frames -- a heartbeat ack
+                # riding along with an answer is routine -- and a frame can be
+                # split across notifications. Matching on bytes [4:6] of the
+                # raw buffer misses an answer in either case, so the bytes are
+                # accumulated and framed properly.
+                buffer = bytearray()
+                awaited = {
+                    b"\x41\x44": realtime_future,
+                    b"\x41\x43": settings_future,
+                    b"\x27\x23": sound_future,
+                }
 
-                    cmd_id = data[4:6].hex()
-                    
-                    if cmd_id == "4144": # Realtime
-                        if not realtime_future.done():
-                            realtime_future.set_result(data)
-                    elif cmd_id == "4143": # Settings
-                        if not settings_future.done():
-                            settings_future.set_result(data)
-                    elif cmd_id == "2723": # Sound status
-                        if not sound_future.done():
-                            sound_future.set_result(data)
+                def notification_handler(sender, data: bytearray) -> None:
+                    buffer.extend(data)
+                    consumed = 0
+                    for frame in protocol.iter_frames(bytes(buffer)):
+                        consumed = max(consumed, bytes(buffer).find(frame) + len(frame))
+                        if not protocol.frame_is_valid(frame):
+                            _LOGGER.debug("Discarding frame with a bad checksum: %s", frame.hex())
+                            continue
+                        opcode = protocol.frame_opcode(frame)
+                        future = awaited.get(opcode)
+                        if future is not None and not future.done():
+                            future.set_result(frame)
+                    del buffer[:consumed]
 
                 # Start notifying
                 await client.start_notify(NOTIFY_UUID, notification_handler)
@@ -285,197 +287,100 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         self.data["alarm_high"] = high
         self.data["screen_off"] = screen_off 
 
-    async def async_set_mute(self, mute: bool):
-        """Set mute state."""
-        # Use verified hardcoded packets from Java source
-        cmd = CMD_SET_SOUND_OFF if mute else CMD_SET_SOUND_ON
-        await self._send_command(cmd)
+    async def async_set_mute(self, mute: bool) -> None:
+        """Turn the alarm buzzer off or on."""
+        await self._send_command(protocol.set_sound(not mute))
         self.data["mute"] = mute
         self.async_update_listeners()
 
-    async def async_set_temp_unit(self, celsius: bool):
-        """Set temperature unit."""
-        cmd = CMD_SET_TEMP_UNIT_C if celsius else CMD_SET_TEMP_UNIT_F
-        await self._send_command(cmd)
-        # Update local state optimistically
+    async def async_set_temp_unit(self, celsius: bool) -> None:
+        """Switch the display between Celsius and Fahrenheit.
+
+        This changes the panel only. Telemetry keeps reporting Celsius either
+        way, which is why the console experiments used this as a probe.
+        """
+        await self._send_command(protocol.set_temperature_unit(celsius))
         self.data["temp_unit"] = "C" if celsius else "F"
         self.async_update_listeners()
 
-    async def _send_command(self, command: bytes):
-        """Send a command to the device."""
-        # This is tricky because we might not be connected if we are outside the update loop.
-        # We need a quick connection.
-        from bleak import BleakClient
-        from bleak_retry_connector import establish_connection
-        ble_device = bluetooth.async_ble_device_from_address(self.hass, self.address, connectable=True)
-        _LOGGER.debug(f"Sending command {command.hex()} to {self.address}")
-        
-        # Reuse existing client if possible
-        if self._client and self._client.is_connected:
-            client = self._client
-            await client.write_gatt_char(WRITE_UUID, command, response=False)
-            _LOGGER.debug("Command sent successfully (REUSED connection)")
-        else:
-             # If not connected during an action, we must connect.
-             # We should probably update self._client to keep it persistent too?
-            _LOGGER.debug("Sending command: Establishing NEW connection")
-            client = await establish_connection(BleakClient, ble_device, self.address)
-            self._client = client
-            try:
-                await client.write_gatt_char(WRITE_UUID, command, response=False)
-                _LOGGER.debug("Command sent successfully")
-            except Exception:
-                # If command fails, perhaps we should disconnect to be clean?
-                # But for now let's hope it stays open for next poll?
-                # Actually if we just opened it, we might want to keep it open for consistency with the new policy.
-                 raise
-            # finally:
-            #    await client.disconnect() <-- REMOVED
+    async def async_set_alarm_thresholds(
+        self,
+        low: int | None = None,
+        high: int | None = None,
+        screen_off: int | None = None,
+    ) -> None:
+        """Set the CO2 alarm thresholds and screen-off timer together.
 
-    async def async_set_screen_off(self, minutes: int):
-         # Create command for screen off
-         # Header: 7B 41 00 0B 42 43 04 00 20 00 00 00 00 00 7D (Example from java for submitScreenOffTime)
-         # But wait, java:
-         # Logger.e("send command：4243 submitScreenOffTime", new Object[0]);
-         # byte[] bArr = {123, 65, 0, 11, 66, 67, 4, 0, 32, 0, 0, 0, 0, 0, 125};
-         # bArr[10] = bArrShortToByteArray[1];
-         # bArr[11] = bArrShortToByteArray[0];
-         # CRC at 12, 13
-         
-         # Note: Java array is:
-         # 0: 123 (7B)
-         # 1: 65 (41)
-         # ...
-         # 8: 32 (0x20) -> This seems to be a mask or type?
-         # 9: 0
-         # 10: High Byte of value? NO, ShortToByteArray: bArr[i2] = (byte) (i & 255); -> Little Endian?
-         # bArr[10] = (byte) ((i & MotionEventCompat.ACTION_POINTER_INDEX_MASK) >> 8); -> High byte!
-         # Wait `shortToByteArray` impl in java:
-         # bArr[i2] = (byte) (i & 255);
-         # bArr[i2 + 1] = (byte) ((i & ... ) >> 8);
-         # So index 0 is Lo, index 1 is Hi.
-         # But then usage:
-         # bArr[10] = bArrShortToByteArray[1]; (High Byte)
-         # bArr[11] = bArrShortToByteArray[0]; (Low Byte)
-         # So Big Endian on the wire for these 2 bytes?
-         
-         val_hi = (minutes >> 8) & 0xFF
-         val_lo = minutes & 0xFF
-         
-         # Base Packet
-         #                7B    41    00    0B    42    43    04    00    20    00    [HI]  [LO]  [CRC_L] [CRC_H] 7D
-         packet = bytearray([0x7B, 0x41, 0x00, 0x0B, 0x42, 0x43, 0x04, 0x00, 0x20, 0x00, val_hi, val_lo])
-         
-         # Calculate CRC
-         crc = self._crc16(packet)
-         packet.append(crc & 0xFF)
-         packet.append((crc >> 8) & 0xFF)
-         packet.append(0x7D)
-         
-         await self._send_command(packet)
-         self.data["screen_off"] = minutes # Optimistic update
-         self.async_update_listeners()
+        The device takes all three in one frame, so the unspecified ones are
+        filled from the last known state rather than reset.
+        """
+        new_low = low if low is not None else self.data.get("alarm_low", 800)
+        new_high = high if high is not None else self.data.get("alarm_high", 1000)
+        new_screen_off = (
+            screen_off if screen_off is not None else self.data.get("screen_off", 0)
+        )
 
-    async def async_set_alarm_thresholds(self, low: int | None = None, high: int | None = None, screen_off: int | None = None):
-        """Set alarm thresholds and screen off timer."""
-        # Get current values to fill in gaps
-        current_low = self.data.get("alarm_low", 800)
-        current_high = self.data.get("alarm_high", 1000)
-        current_screen_off = self.data.get("screen_off", 0)
-
-        new_low = low if low is not None else current_low
-        new_high = high if high is not None else current_high
-        new_screen_off = screen_off if screen_off is not None else current_screen_off
-
-        # Validate logic: Low < High
         if new_low >= new_high:
-            _LOGGER.warning(f"Low threshold ({new_low}) must be less than High ({new_high})")
-            return
+            raise HomeAssistantError(
+                f"The low threshold ({new_low} ppm) must be below the high one "
+                f"({new_high} ppm)"
+            )
 
-        # Build packet using "submitAlertValue" structure (Full Update)
-        # Header: 7B 41 00 0F 42 43 04 00 40 06 [Lov V] [Hi V] [Screen V] [CRC] 7D
-        # Len: 0x0F (15)
-        # Cmd: 42 43
-        # Magic: 04 00 40 06 (Matches Java submitAlertValue)
-        
-        packet = bytearray([0x7B, 0x41, 0x00, 0x0F, 0x42, 0x43, 0x04, 0x00, 0x40, 0x06])
-        
-        # Low (2 bytes Big Endian)
-        packet.append((new_low >> 8) & 0xFF)
-        packet.append(new_low & 0xFF)
-        
-        # High (2 bytes Big Endian)
-        packet.append((new_high >> 8) & 0xFF)
-        packet.append(new_high & 0xFF)
-        
-        # Screen Off (2 bytes Big Endian) - Pass current value to preserve it (assuming 3rd arg is Screen Off)
-        packet.append((new_screen_off >> 8) & 0xFF)
-        packet.append(new_screen_off & 0xFF)
-
-        # CRC (Calculated on the first 16 bytes: Header(4) + Data(12))
-        crc = self._crc16(packet)
-        packet.append((crc >> 8) & 0xFF)
-        packet.append(crc & 0xFF)
-        packet.append(0x7D)
-
-        await self._send_command(packet)
-        
-        # Optimistic update
+        await self._send_command(
+            protocol.set_thresholds(new_low, new_high, new_screen_off)
+        )
         self.data["alarm_low"] = new_low
         self.data["alarm_high"] = new_high
         self.data["screen_off"] = new_screen_off
         self.async_update_listeners()
 
-    async def async_set_screen_off(self, minutes: int):
-         """Set screen off timer using dedicated command."""
-         # Use 'submitScreenOffTime' packet structure
-         # Header: 7B 41 00 0B 42 43 04 00 20 00 [VAL_HI] [VAL_LO] [CRC] 7D
-         # Magic: 20 00
-         
-         val_hi = (minutes >> 8) & 0xFF
-         val_lo = minutes & 0xFF
-         
-         packet = bytearray([0x7B, 0x41, 0x00, 0x0B, 0x42, 0x43, 0x04, 0x00, 0x20, 0x00, val_hi, val_lo])
-         
-         # CRC
-         crc = self._crc16(packet)
-         packet.append((crc >> 8) & 0xFF)
-         packet.append(crc & 0xFF)
-         packet.append(0x7D)
-         
-         await self._send_command(packet)
-         self.data["screen_off"] = minutes
-         self.async_update_listeners()
+    async def async_set_screen_off(self, minutes: int) -> None:
+        """Set the screen-off timer on its own."""
+        await self._send_command(protocol.set_screen_off(minutes))
+        self.data["screen_off"] = minutes
+        self.async_update_listeners()
 
-    async def async_sync_time(self):
-        """Sync device time (UTC)."""
-        import datetime
-        now = datetime.datetime.utcnow()
-        
-        # Format: YY MM DD HH mm ss (decimal values as bytes)
-        # Packet: 7B 41 00 0C 22 42 01 00 [YY] [MM] [DD] [HH] [mm] [ss] [CRC] 7D
-        
-        # Header + Cmd (22 42) + Flag (01)
-        packet = bytearray([0x7B, 0x41, 0x00, 0x0C, 0x22, 0x42, 0x01])
-        
-        # Date parts (modulo 100 for year to get 2 digits)
-        packet.append(now.year % 100)
-        packet.append(now.month)
-        packet.append(now.day)
-        packet.append(now.hour)
-        packet.append(now.minute)
-        packet.append(now.second)
-        
-        # CRC
-        crc = self._crc16(packet)
-        packet.append((crc >> 8) & 0xFF)
-        packet.append(crc & 0xFF)
-        packet.append(0x7D)
-        
-        await self._send_command(packet)
-        _LOGGER.info("Synced time to device (UTC)")
+    async def async_sync_time(self) -> None:
+        """Set the device clock, in UTC."""
+        await self._send_command(protocol.sync_time(datetime.now(timezone.utc)))
+        _LOGGER.debug("Device clock synchronised")
 
-        return crc 
+    async def _send_command(self, command: bytes) -> None:
+        """Write one frame, reusing the link when there is one.
+
+        The device advertises only in short windows, so a link that already
+        exists is worth keeping: tearing it down and reconnecting for each
+        command is what used to break the pairing.
+        """
+        if self._client is not None and self._client.is_connected:
+            _LOGGER.debug("Sending %s over the existing link", command[4:6].hex())
+            await self._client.write_gatt_char(WRITE_UUID, command, response=False)
+            return
+
+        ble_device = bluetooth.async_ble_device_from_address(
+            self.hass, self.address, connectable=True
+        )
+        if ble_device is None:
+            raise HomeAssistantError(
+                f"{self.address} is not currently reachable over Bluetooth. The "
+                "monitor only advertises for a short window after it loses a "
+                "connection, so press the button on the device and try again"
+            )
+
+        from bleak import BleakClient
+        from bleak_retry_connector import establish_connection
+
+        _LOGGER.debug("Sending %s over a new link", command[4:6].hex())
+        try:
+            client = await establish_connection(BleakClient, ble_device, self.address)
+        except (BleakError, TimeoutError) as err:
+            raise HomeAssistantError(
+                f"Could not connect to {self.address}: {err}. Press the button on "
+                "the device to make it discoverable, then try again"
+            ) from err
+
+        self._client = client
+        await client.write_gatt_char(WRITE_UUID, command, response=False)
 
     async def async_provision(
         self,
