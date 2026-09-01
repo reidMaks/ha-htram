@@ -11,6 +11,7 @@ from bleak.exc import BleakError
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
@@ -34,6 +35,10 @@ from .const import (
 from . import protocol
 
 _LOGGER = logging.getLogger(__name__)
+
+# hass.data[DOMAIN][entry_id] is the pattern Home Assistant moved away from:
+# runtime_data is typed, scoped to the entry and cleaned up with it.
+type HtramConfigEntry = ConfigEntry["HTRAMDataUpdateCoordinator"]
 
 class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching HTRAM data."""
@@ -471,6 +476,45 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         _LOGGER.info("Synced time to device (UTC)")
 
         return crc 
+
+    async def async_provision(
+        self,
+        ssid: str,
+        password: str,
+        mqtt_server: str | None = None,
+        aes_key: str | None = None,
+        aes_iv: str | None = None,
+    ) -> None:
+        """Provision the device, in the order the vendor app uses.
+
+        The radio-mode command first is not optional. Credentials sent while
+        the device is still in BLE mode are acknowledged exactly like accepted
+        ones and then ignored -- which is why earlier attempts looked like they
+        worked and changed nothing.
+
+        The link is dropped at the end for the same reason: the device joins
+        the network after the Bluetooth session ends, not during it.
+        """
+        _LOGGER.debug("Provisioning: switching the radio to WiFi mode")
+        await self._send_command(protocol.set_radio_mode(wifi=True))
+        await asyncio.sleep(0.5)
+
+        if mqtt_server:
+            if not (aes_key and aes_iv):
+                raise HomeAssistantError(
+                    "An MQTT server needs an AES key and IV: they travel in the "
+                    "same frame and the device rejects a partial one"
+                )
+            _LOGGER.debug("Provisioning MQTT endpoint: %s", mqtt_server)
+            await self._send_command(
+                protocol.cloud_config(base64.b64decode(aes_key), aes_iv, mqtt_server)
+            )
+            await asyncio.sleep(1)
+
+        _LOGGER.debug("Provisioning WiFi network: %s", ssid)
+        await self._send_command(protocol.wifi_credentials(ssid, password))
+        await asyncio.sleep(0.5)
+        await self._cleanup_client()
 
     async def async_provision_wifi(self, ssid: str, password: str):
         """Provision WiFi credentials."""

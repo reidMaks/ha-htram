@@ -1,21 +1,77 @@
 """The HTRAM integration."""
 import logging
 
+import voluptuous as vol
+
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.const import ATTR_DEVICE_ID, Platform
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
+from homeassistant.helpers import config_validation as cv, device_registry as dr
 
 from .const import CONF_MQTT_ENABLED, CONF_SERIAL, DOMAIN
-from .coordinator import HTRAMDataUpdateCoordinator
+from .coordinator import HTRAMDataUpdateCoordinator, HtramConfigEntry
 from .mqtt_source import HtramMqttSource
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH, Platform.NUMBER, Platform.SELECT, Platform.BUTTON]
 
 _LOGGER = logging.getLogger(__name__)
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+
+SERVICE_CONFIGURE = "configure_device"
+SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_DEVICE_ID): cv.string,
+        vol.Required("ssid"): cv.string,
+        vol.Required("password"): cv.string,
+        vol.Optional("mqtt_server"): cv.string,
+        vol.Optional("aes_key"): cv.string,
+        vol.Optional("aes_iv"): cv.string,
+    }
+)
+
+
+def _coordinator_for_device(hass: HomeAssistant, device_id: str):
+    """Resolve a targeted device to its coordinator."""
+    device = dr.async_get(hass).async_get(device_id)
+    if device is None:
+        raise HomeAssistantError(f"No such device: {device_id}")
+
+    for entry_id in device.config_entries:
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry and entry.domain == DOMAIN and hasattr(entry, "runtime_data"):
+            return entry.runtime_data
+
+    raise HomeAssistantError(
+        f"Device {device.name or device_id} is not a loaded HTRAM device"
+    )
+
+
+async def async_setup(hass: HomeAssistant, config) -> bool:
+    """Register the provisioning service once, not once per device.
+
+    It takes a device target rather than applying to every configured monitor,
+    which is what the previous version did.
+    """
+
+    async def handle_configure(call: ServiceCall) -> None:
+        coordinator = _coordinator_for_device(hass, call.data[ATTR_DEVICE_ID])
+        await coordinator.async_provision(
+            ssid=call.data["ssid"],
+            password=call.data["password"],
+            mqtt_server=call.data.get("mqtt_server"),
+            aes_key=call.data.get("aes_key"),
+            aes_iv=call.data.get("aes_iv"),
+        )
+
+    hass.services.async_register(
+        DOMAIN, SERVICE_CONFIGURE, handle_configure, schema=SERVICE_SCHEMA
+    )
+    return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: HtramConfigEntry) -> bool:
     """Set up HTRAM from a config entry."""
     address = entry.unique_id
     assert address is not None
@@ -28,8 +84,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator.mqtt_enabled = entry.options.get(CONF_MQTT_ENABLED, False)
     await coordinator.async_config_entry_first_refresh()
 
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = coordinator
+    entry.runtime_data = coordinator
 
     # Telemetry over MQTT is opt-in: it needs a broker the device can reach,
     # which is a good deal of setup, so nothing here assumes it.
@@ -49,59 +104,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # Register Service
-    async def handle_configure_device(call):
-        """Handle the service call."""
-        ssid = call.data.get("ssid")
-        password = call.data.get("password")
-        mqtt_server = call.data.get("mqtt_server")
-        aes_key = call.data.get("aes_key")
-        aes_iv = call.data.get("aes_iv")
-
-        # Find the coordinator. In a real scenario, user should target a device/entity.
-        # But for now, we'll try to find the coordinator associated with the service call context
-        # or just pick the first one if global? Service calls usually target an entity.
-        # Let's assume the user targets an entity or device, but standard HA service calls need target resolution.
-        # Simplification: We iterate over all loaded coordinators and apply to all? 
-        # Or better: Require device_id/entity_id?
-        # Standard approach: register service at platform level or use helper to get coordinator.
-        
-        # For this custom component, let's iterate all entries for now (assuming 1 device usually)
-        # or rely on the user to pick the right one if we implemented entity services.
-        # But we are registering a DOMAIN service.
-        
-        for entry_id, coord in hass.data[DOMAIN].items():
-            if mqtt_server and aes_key and aes_iv:
-                await coord.async_provision_mqtt(mqtt_server, aes_key, aes_iv)
-                # Small delay between commands
-                await asyncio.sleep(1)
-            
-            if ssid and password:
-                await coord.async_provision_wifi(ssid, password)
-
-    import voluptuous as vol
-    from homeassistant.helpers import config_validation as cv
-
-    SERVICE_SCHEMA = vol.Schema({
-        vol.Optional("ssid"): cv.string,
-        vol.Optional("password"): cv.string,
-        vol.Optional("mqtt_server"): cv.string,
-        vol.Optional("aes_key"): cv.string,
-        vol.Optional("aes_iv"): cv.string,
-    })
-
-    hass.services.async_register(DOMAIN, "configure_device", handle_configure_device, schema=SERVICE_SCHEMA)
-
     return True
 
-async def _async_reload_on_options_change(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def _async_reload_on_options_change(hass: HomeAssistant, entry: HtramConfigEntry) -> None:
     """Re-run setup so a changed data source takes effect immediately."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        hass.data[DOMAIN].pop(entry.entry_id)
+async def async_unload_entry(hass: HomeAssistant, entry: HtramConfigEntry) -> bool:
+    """Unload a config entry.
 
-    return unload_ok
+    runtime_data goes away with the entry, so there is nothing to pop.
+    """
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

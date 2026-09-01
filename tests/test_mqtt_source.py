@@ -97,3 +97,60 @@ def test_serial_from_advertised_name():
     assert serial_from_name("HTRAM-") == ""
     assert serial_from_name(None) == ""
     assert serial_from_name("94:E6:86:94:36:B2") == ""
+
+
+def test_provisioning_sends_radio_mode_before_credentials():
+    """The order is the whole trick.
+
+    Credentials sent while the device is still in BLE mode are acknowledged
+    and ignored, which is indistinguishable from success unless the order is
+    checked.
+    """
+    import asyncio
+
+    sent: list[bytes] = []
+    coord = object.__new__(Coordinator)
+
+    async def fake_send(packet):
+        sent.append(packet)
+
+    async def fake_cleanup():
+        sent.append(b"<disconnect>")
+
+    coord._send_command = fake_send
+    coord._cleanup_client = fake_cleanup
+
+    asyncio.run(
+        coord.async_provision(
+            ssid="net",
+            password="pw",
+            mqtt_server="tcp://mqtt.example",
+            aes_key="MDEyMzQ1Njc4OWFiY2RlZg==",
+            aes_iv="0123456789abcdef",
+        )
+    )
+
+    opcodes = [p[4:6].hex() for p in sent if p != b"<disconnect>"]
+    assert opcodes == ["7458", "20b0", "7460"]
+    assert sent[-1] == b"<disconnect>", "the link must be dropped for the join to happen"
+
+
+def test_provisioning_rejects_a_server_without_keys():
+    """The endpoint and the key share one frame, so half of it is not valid."""
+    import asyncio
+
+    from homeassistant.exceptions import HomeAssistantError
+
+    coord = object.__new__(Coordinator)
+
+    async def fake_send(packet):
+        pass
+
+    coord._send_command = fake_send
+
+    with pytest.raises(HomeAssistantError):
+        asyncio.run(
+            coord.async_provision(
+                ssid="net", password="pw", mqtt_server="tcp://mqtt.example"
+            )
+        )

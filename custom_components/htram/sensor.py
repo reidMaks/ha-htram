@@ -4,7 +4,6 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.const import (
     PERCENTAGE,
@@ -12,20 +11,20 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import HTRAMDataUpdateCoordinator
+from .coordinator import HTRAMDataUpdateCoordinator, HtramConfigEntry
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    entry: HtramConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the sensor platform."""
-    coordinator: HTRAMDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = entry.runtime_data
     
     entities = [
         HTRAMSensor(coordinator, "co2", "CO2", SensorDeviceClass.CO2, UnitOfRatio.PARTS_PER_MILLION),
@@ -75,6 +74,16 @@ class HTRAMSensor(CoordinatorEntity, SensorEntity):
     def native_value(self):
         """Return the state of the sensor."""
         return self.coordinator.data.get(self._key)
+
+    @property
+    def available(self) -> bool:
+        """Whether the reading is current.
+
+        A missing key means the source stopped supplying it -- MQTT went quiet,
+        or the Bluetooth poll failed. Showing the last value indefinitely would
+        draw a flat line through an outage.
+        """
+        return super().available and self.coordinator.data.get(self._key) is not None
 
 
 class HTRAMSourceSensor(CoordinatorEntity, SensorEntity):
