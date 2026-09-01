@@ -1,96 +1,147 @@
-# Honeywell Transmission Risk Air Monitor (HTRAM) Integration
-
-> [!WARNING]
-> **Work In Progress**: This integration is currently in active development.
-> **Auto-Discovery does NOT work at this time.**
-> You MUST pair the device with your Home Assistant host MANUALLY (e.g., using `bluetoothctl` in the console) BEFORE adding this integration.
->
-> *This integration was entirely reverse-engineered and written by **Antigravity (Google Deepmind)** with the help of a human supervisor.*
+# Honeywell Transmission Risk Air Monitor (HTRAM)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
-Custom component for Home Assistant to integrate the **Honeywell Transmission Risk Air Monitor (HTRAM)** via **Bluetooth Low Energy (BLE)**.
+Home Assistant integration for the **Honeywell Transmission Risk Air Monitor**,
+reverse-engineered from the vendor's Android app after Honeywell shut the cloud
+service down. Everything here is local: nothing talks to Honeywell, because
+there is no longer anything to talk to.
 
-This integration was reverse-engineered from the official (now defunct) Android application to provide full local control without cloud dependency.
+The device speaks two protocols and the integration uses both.
 
-## Features
+| | Bluetooth | MQTT |
+| --- | --- | --- |
+| CO2, temperature, humidity | yes, polled | yes, pushed every 30 s |
+| Battery, charging | yes | — |
+| Buzzer, thresholds, screen, units | yes, the only way | — |
+| Setup needed | none | your own broker |
 
-*   **Real-time Monitoring**:
-    *   CO2 Levels (ppm)
-    *   Temperature (°C/°F)
-    *   Humidity (%)
-    *   Battery Level (%) & Charging Status
-*   **Device Control**:
-    *   **Mute Alarm**: Toggle the buzzer sound on/off.
-    *   **Screen Settings**: Set auto-off timer ("Always On" vs "Auto Off (2 min)").
-    *   **Alarm Thresholds**: Customize Low (Green/Yellow) and High (Yellow/Red) CO2 thresholds.
-    *   **Temperature Unit**: Switch between Celsius and Fahrenheit.
-    *   **Time Sync**: Synchronize device time with Home Assistant (UTC).
+Bluetooth alone is a complete, working setup. MQTT is an optional upgrade
+that trades some setup for readings every 30 seconds and far fewer Bluetooth
+connections — which matters, because it is the polling that tends to disturb
+the pairing.
+
+## Requirements
+
+- Home Assistant 2026.8 or newer
+- A Bluetooth adapter on the Home Assistant host, or a Bluetooth proxy
 
 ## Installation
 
-### Option 1: HACS (Recommended)
+**HACS** — add this repository as a custom repository of category
+*Integration*, download it, restart Home Assistant.
 
-1.  Open HACS in Home Assistant.
-2.  Go to **Integrations** > **Custom repositories**.
-3.  Add the URL of this repository.
-4.  Category: **Integration**.
-5.  Click **Add** and then **Download**.
-6.  Restart Home Assistant.
+**Manually** — copy `custom_components/htram` into your `config/custom_components`
+directory and restart.
 
-### Option 2: Manual
+## Setting it up
 
-1.  Download the `custom_components/htram` folder.
-2.  Copy it to your Home Assistant's `config/custom_components/` directory.
-3.  Restart Home Assistant.
+The monitor advertises over Bluetooth **only in short windows** — for about a
+minute after boot, and after it loses a connection. Outside those windows it is
+invisible and unconnectable. Press its button before anything else; if a step
+reports that the device did not answer, press the button and retry rather than
+starting over.
 
-## Configuration
+1. **Settings → Devices & Services → Add Integration → HTRAM.**
+   Pick your monitor from the list. That is the whole setup: the sensors work
+   from here on.
 
-### Step 1: Manual Pairing (Required)
+2. **Optional, on the integration card → Configure.** Two things live there:
 
-Due to limitations in the current auto-discovery logic, you must pair the device with your OS first.
+   - **Provision device** — sends a WiFi network, and optionally a broker
+     address, to the monitor over Bluetooth.
+   - **Data source** — switches the readings from Bluetooth polling to MQTT.
 
-**Using SSH / Terminal:**
-1.  Open your terminal.
-2.  Run `bluetoothctl`.
-3.  Put your HTRAM device in **Pairing Mode** (double-press button, Bluetooth icon flashes).
-4.  Run `scan on`.
-5.  Wait for your device to appear (look for `HTRAM-...`).
-6.  Run `pair XX:XX:XX:XX:XX:XX` (replace with MAC address).
-    *   *Note*: If `pair` fails, try running `connect XX:XX:XX:XX:XX:XX` instead.
-7.  If a PIN appears on the device, enter it. If not, it may pair automatically ("Just Works" mode).
-8.  Once paired/connected, type `exit`.
+## The MQTT path
 
-### Step 2: Add Integration
+This is worth being honest about: it is real work, and it is optional.
 
-1.  Go to **Settings** > **Devices & Services**.
-2.  Click **Add Integration**.
-3.  Search for **HTRAM**.
-4.  Select your paired device from the list.
+The device was built to publish to Honeywell's cloud and its firmware is not
+configurable. It will only speak **MQTT over WebSocket Secure on port 443**,
+and it authenticates with a username that changes on every connection
+(`1617:V1.00 :<random>`) whose password is the SHA-256 of that same string. No
+managed broker will accept that, including Home Assistant's own Mosquitto
+add-on — its auth plugin cannot be bypassed from the customize folder.
 
-## Usage
+So the MQTT path needs a broker you control, with an anonymous WebSocket
+listener on port 443. [tools/README.md](tools/README.md) documents the protocol
+and a working setup in full, including why each constraint exists and how it
+was established.
 
-Once added, a new Device will be created with the following entities:
+Once such a broker exists:
 
-*   **Sensors**: `sensor.htram_co2`, `sensor.htram_temperature`, etc.
-*   **Switch**: `switch.htram_mute` (Turn **ON** to mute the device).
-*   **Selects**:
-    *   `select.htram_screen_off_timer`: Choose "Always On" or "Auto Off (2 min)".
-    *   `select.htram_temperature_unit`: Celsius / Fahrenheit.
-*   **Numbers**:
-    *   `number.htram_co2_alarm_low`: Threshold for yellow warning.
-    *   `number.htram_co2_alarm_high`: Threshold for red alarm.
-    *   `number.htram_co2_alarm_low`: Threshold for yellow warning.
-    *   `number.htram_co2_alarm_high`: Threshold for red alarm.
-*   **Select**: `select.htram_temperature_unit`.
-*   **Button**: `button.htram_sync_time`.
+1. **Configure → Provision device.** Give the WiFi network and the broker
+   address. The address needs a six-character scheme prefix such as `tcp://`,
+   which the device strips without reading; a hostname works as well as an IP,
+   and is worth preferring since changing it later needs no button press.
+2. **Configure → Data source.** Enable MQTT and enter the serial number — it is
+   the part after the dash in the advertised name, `HTRAM-RM1221412257`.
 
-## Troubleshooting
+Nothing new appears. The same CO2, temperature and humidity entities keep their
+ids and history and simply change what feeds them. A diagnostic sensor reports
+which transport is live.
 
-*   **Bluetooth Range**: Ensure the device is close to your Home Assistant host or a Bluetooth Proxy.
-*   **Polling**: Data is updated every 60 seconds to save battery.
-*   **Battery Level**: The device reports battery in "bars" (0-4). The integration estimates this as 0%, 25%, 50%, 75%, 100%.
+If telemetry stops for five minutes those three sensors go unavailable. They do
+not silently fall back to Bluetooth polling: that is the thing MQTT was adopted
+to avoid, and resuming it unannounced is how a working setup quietly degrades.
 
-## Disclaimer
+## Entities
 
-This is an unofficial integration and is not affiliated with Honeywell. Use at your own risk.
+| Entity | Source |
+| --- | --- |
+| `sensor.<device>_co2` | MQTT when enabled, otherwise Bluetooth |
+| `sensor.<device>_temperature` | " |
+| `sensor.<device>_humidity` | " |
+| `sensor.<device>_battery_level` | Bluetooth |
+| `sensor.<device>_data_source` | diagnostic: `bluetooth` or `mqtt` |
+| `binary_sensor.<device>_charging` | Bluetooth |
+| `switch.<device>_mute` | on means silent |
+| `select.<device>_temperature_unit` | display only; telemetry stays Celsius |
+| `select.<device>_screen_off_timer` | |
+| `number.<device>_co2_alarm_low` | yellow threshold |
+| `number.<device>_co2_alarm_high` | red threshold |
+| `button.<device>_sync_time` | sets the device clock, UTC |
+
+There is also a `htram.configure_device` service, which provisions a targeted
+monitor without going through the options dialog.
+
+## Known limitations
+
+**Control is Bluetooth-only.** The device subscribes to a downlink topic and
+the vendor's web portal used it to mute devices remotely, but its payload
+format was not cracked — eighteen candidates were delivered to the device and
+ignored. §8f of [tools/README.md](tools/README.md) records what was tried, so
+nobody repeats it.
+
+**Battery is reported in bars**, 0 to 4, and shown as 0/25/50/75/100 %.
+
+**Restarting Home Assistant does not restore Bluetooth by itself.** If the
+integration does not reconnect while the device is still advertising, the
+window closes and the button has to be pressed. This is why the MQTT path
+exists: telemetry survives a restart without any of that.
+
+## Development
+
+```bash
+uv sync
+uv run pytest
+```
+
+The suite covers the wire protocol against the vendor app's own byte literals
+and 465 telemetry payloads captured from a device, and runs the integration
+inside a real Home Assistant through
+`pytest-homeassistant-custom-component`. The harness version is pinned to the
+Home Assistant version it targets; they must be bumped together.
+
+`tools/` holds the console programs the protocol was worked out with: a BLE
+client, a WiFi provisioner, a UART sniffer, a standalone MQTT-over-WSS broker
+and a telemetry decoder. They are independent of Home Assistant and are the
+right place to start when something needs debugging at the protocol level.
+
+## Credit and disclaimer
+
+The first version was reverse-engineered and written by **Antigravity (Google
+DeepMind)** with a human supervisor; the protocol work, the MQTT path and the
+Home Assistant modernisation that followed were done with **Claude**.
+
+Unofficial, unaffiliated with Honeywell, and used at your own risk.
