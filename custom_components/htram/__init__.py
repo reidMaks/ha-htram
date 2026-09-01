@@ -14,7 +14,16 @@ from .const import CONF_MQTT_ENABLED, CONF_SERIAL, DOMAIN
 from .coordinator import HTRAMDataUpdateCoordinator, HtramConfigEntry
 from .mqtt_source import HtramMqttSource
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH, Platform.NUMBER, Platform.SELECT, Platform.BUTTON]
+# binary_sensor was missing here, so the charging sensor the platform defines
+# was never created.
+PLATFORMS: list[Platform] = [
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+    Platform.NUMBER,
+    Platform.SELECT,
+    Platform.SENSOR,
+    Platform.SWITCH,
+]
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -12,11 +12,9 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
 from .coordinator import HTRAMDataUpdateCoordinator, HtramConfigEntry
+from .entity import HtramEntity
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -35,7 +33,7 @@ async def async_setup_entry(
     ]
     async_add_entities(entities)
 
-class HTRAMSensor(CoordinatorEntity, SensorEntity):
+class HTRAMSensor(HtramEntity, SensorEntity):
     """Representation of a HTRAM Sensor."""
 
     def __init__(
@@ -49,7 +47,6 @@ class HTRAMSensor(CoordinatorEntity, SensorEntity):
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._key = key
-        self._attr_has_entity_name = True
         self._attr_translation_key = key
         self._attr_unique_id = f"{coordinator.address}_{key}"
         self._attr_device_class = device_class
@@ -62,13 +59,6 @@ class HTRAMSensor(CoordinatorEntity, SensorEntity):
         else:
              self._attr_suggested_display_precision = 0
 
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, coordinator.address)},
-            "name": "HTRAM Air Monitor",
-            "manufacturer": "Honeywell",
-            "model": "HTRAM-RM",
-            "connections": {(dr.CONNECTION_BLUETOOTH, coordinator.address)},
-        }
 
     @property
     def native_value(self):
@@ -86,7 +76,7 @@ class HTRAMSensor(CoordinatorEntity, SensorEntity):
         return super().available and self.coordinator.data.get(self._key) is not None
 
 
-class HTRAMSourceSensor(CoordinatorEntity, SensorEntity):
+class HTRAMSourceSensor(HtramEntity, SensorEntity):
     """Which transport the readings are currently arriving on.
 
     Without this the switch between Bluetooth and MQTT is invisible, and when
@@ -94,7 +84,6 @@ class HTRAMSourceSensor(CoordinatorEntity, SensorEntity):
     the way until wanted.
     """
 
-    _attr_has_entity_name = True
     _attr_translation_key = "source"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_device_class = SensorDeviceClass.ENUM
@@ -104,10 +93,6 @@ class HTRAMSourceSensor(CoordinatorEntity, SensorEntity):
         """Initialize the diagnostic sensor."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.address}_source"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, coordinator.address)},
-            "connections": {(dr.CONNECTION_BLUETOOTH, coordinator.address)},
-        }
 
     @property
     def native_value(self) -> str:
