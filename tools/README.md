@@ -844,9 +844,12 @@ openssl req -x509 -newkey rsa:2048 -keyout htram-key.pem -out htram-cert.pem \
 # 2. broker on 443 (privileged)
 sudo .venv/bin/python -u tools/mqtt_wss.py --cert htram-cert.pem --key htram-key.pem
 
-# 3. point the device at it -- the tcp:// prefix is MANDATORY
+# 3. point the device at it -- the tcp:// prefix is MANDATORY.
+#    A hostname works as well as an address: the device hands whatever it
+#    stored to AT+MQTTCONN, which resolves names. A name is worth preferring,
+#    because changing it later needs no button press.
 .venv/bin/python tools/htram_wifi.py wifi <MAC> \
-  --ssid <SSID> --password <PSK> --mqtt-server tcp://<ip>
+  --ssid <SSID> --password <PSK> --mqtt-server tcp://<host>
 
 # 4. power-cycle the device; it connects ~5 s after boot
 ```
