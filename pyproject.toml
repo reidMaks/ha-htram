@@ -3,7 +3,24 @@ name = "htram"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14.2"
 dependencies = [
     "bleak>=2.1.1",
+    "esptool>=5.3.1",
+    "pyserial>=3.5",
 ]
+
+[dependency-groups]
+dev = [
+    "aiousbwatcher>=1.1.2",
+    "homeassistant>=2025.4.4",
+    "paho-mqtt>=2.1.0",
+    "pytest-homeassistant-custom-component==0.13.357",
+    "serialx>=1.9.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# pytest-homeassistant-custom-component ships autouse async fixtures, which
+# pytest-asyncio only handles in auto mode.
+asyncio_mode = "auto"

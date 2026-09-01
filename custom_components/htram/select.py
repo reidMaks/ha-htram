@@ -1,40 +1,34 @@
 """Select platform for HTRAM."""
 from homeassistant.components.select import SelectEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import DOMAIN
-from .coordinator import HTRAMDataUpdateCoordinator
+from .coordinator import HTRAMDataUpdateCoordinator, HtramConfigEntry
+from .entity import HtramEntity
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    entry: HtramConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the select platform."""
-    coordinator: HTRAMDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = entry.runtime_data
     async_add_entities([
         HTRAMTempUnitSelect(coordinator),
         HTRAMScreenOffSelect(coordinator),
     ])
 
-class HTRAMTempUnitSelect(CoordinatorEntity, SelectEntity):
+class HTRAMTempUnitSelect(HtramEntity, SelectEntity):
     """Representation of HTRAM Temperature Unit Select."""
 
     def __init__(self, coordinator: HTRAMDataUpdateCoordinator) -> None:
         """Initialize."""
         super().__init__(coordinator)
-        self._attr_has_entity_name = True
         self._attr_translation_key = "temp_unit"
         self._attr_unique_id = f"{coordinator.address}_temp_unit"
         self._attr_options = ["Celsius", "Fahrenheit"]
         self._attr_icon = "mdi:thermometer-cog"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, coordinator.address)},
-        }
 
     @property
     def current_option(self) -> str | None:
@@ -47,20 +41,16 @@ class HTRAMTempUnitSelect(CoordinatorEntity, SelectEntity):
         is_c = option == "Celsius"
         await self.coordinator.async_set_temp_unit(is_c)
 
-class HTRAMScreenOffSelect(CoordinatorEntity, SelectEntity):
+class HTRAMScreenOffSelect(HtramEntity, SelectEntity):
     """Representation of HTRAM Screen Off Select."""
 
     def __init__(self, coordinator: HTRAMDataUpdateCoordinator) -> None:
         """Initialize."""
         super().__init__(coordinator)
-        self._attr_has_entity_name = True
         self._attr_translation_key = "screen_off"
         self._attr_unique_id = f"{coordinator.address}_screen_off"
         self._attr_options = ["Always On", "Auto Off (2 min)"]
         self._attr_icon = "mdi:monitor-off"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, coordinator.address)},
-        }
 
     @property
     def current_option(self) -> str | None:

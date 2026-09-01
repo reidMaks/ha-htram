@@ -1,38 +1,69 @@
 """Config flow for HTRAM integration."""
 from __future__ import annotations
 
+import base64
 import logging
+import secrets
 from typing import Any
 
 import voluptuous as vol
 
 from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import (
-    BluetoothServiceInfo,
+    BluetoothServiceInfoBleak,
     async_discovered_service_info,
 )
-from homeassistant.config_entries import ConfigFlow
-from homeassistant.const import CONF_ADDRESS
-from homeassistant.data_entry_flow import FlowResult
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
+from homeassistant.const import CONF_ADDRESS, CONF_PASSWORD
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.core import callback
 
-from .const import DOMAIN, SERVICE_UUID
+from .const import (
+    CONF_AES_IV,
+    CONF_AES_KEY,
+    CONF_MQTT_ENABLED,
+    CONF_MQTT_SERVER,
+    CONF_SERIAL,
+    CONF_SSID,
+    DOMAIN,
+    SERVICE_UUID,
+)
 
 _LOGGER = logging.getLogger(__name__)
+
+def serial_from_name(name: str | None) -> str:
+    """Pull the serial number out of an advertised name like HTRAM-RM1221412257."""
+    if not name:
+        return ""
+    _, _, serial = name.partition("-")
+    return serial or ""
+
 
 class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for HTRAM."""
 
     VERSION = 1
 
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        """Return the options flow."""
+        return HTRAMOptionsFlow()
+
     def __init__(self) -> None:
         """Initialize the config flow."""
-        self._discovery_info: BluetoothServiceInfo | None = None
+        self._discovery_info: BluetoothServiceInfoBleak | None = None
         self._discovered_device: Any = None
         self._discovered_devices: dict[str, Any] = {}
 
     async def async_step_bluetooth(
-        self, discovery_info: BluetoothServiceInfo
-    ) -> FlowResult:
+        self, discovery_info: BluetoothServiceInfoBleak
+    ) -> ConfigFlowResult:
         """Handle the bluetooth discovery step."""
         _LOGGER.debug(f"Discovered HTRAM device: {discovery_info}")
         await self.async_set_unique_id(discovery_info.address)
@@ -47,7 +78,7 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
         return await self.async_step_bluetooth_confirm()
 
 
-    async def _async_verify_connection(self, discovery_info: BluetoothServiceInfo) -> dict[str, str] | None:
+    async def _async_verify_connection(self, discovery_info: BluetoothServiceInfoBleak) -> dict[str, str] | None:
         """Verify we can connect and pair with the device."""
         from bleak import BleakClient, BleakError
         from bleak_retry_connector import establish_connection
@@ -88,22 +119,28 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
                      await asyncio.sleep(2) 
                      await client.stop_notify(NOTIFY_UUID)
                      
-                 except (BleakError, Exception) as e:
+                 except BleakError as e:
+                     # Usually means pairing has not completed yet. The device is
+                     # reachable, which is what this step is really checking.
                      _LOGGER.warning(f"Notify setup warning (might need pairing): {e}")
-                     # If this failed, it might be because we need pairing but the prompt hasn't been answered yet.
-                     # We'll just catch it; correct timeout logic above usually handles the user delay.
-                     pass
 
                  return None
 
 
+        except (TimeoutError, asyncio.CancelledError):
+            # The commonest outcome by far, and it used to surface as "unknown
+            # error". The monitor advertises only for a short window after it
+            # loses a connection; outside that window the connection attempt
+            # simply times out, and the fix is to press its button.
+            _LOGGER.warning("Timed out connecting to %s: not advertising", device.address)
+            return {"base": "not_advertising"}
         except BleakError as e:
             _LOGGER.error(f"Could not connect to HTRAM: {e}")
             msg = str(e).lower()
             if "no backend with an available connection slot" in msg:
                 return {"base": "adapter_limit_reached"}
             if "failed to discover services" in msg:
-                return {"base": "pairing_failed"} # This usually means pairing didn't complete in time
+                return {"base": "pairing_failed"}
             return {"base": "cannot_connect"}
         except Exception as e:
             _LOGGER.exception(f"Unexpected error connecting to HTRAM: {e}")
@@ -112,7 +149,7 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_bluetooth_confirm(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Confirm discovery."""
         errors: dict[str, str] = {}
         
@@ -136,7 +173,7 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle the user step to pick discovered device."""
         errors: dict[str, str] = {}
         
@@ -188,5 +225,121 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema({
                 vol.Required(CONF_ADDRESS): vol.In(titles),
             }),
+            errors=errors,
+        )
+
+
+class HTRAMOptionsFlow(OptionsFlow):
+    """Options: where readings come from, and provisioning the device."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Offer the two things worth changing after setup."""
+        return self.async_show_menu(
+            step_id="init", menu_options=["data_source", "provision"]
+        )
+
+    async def async_step_data_source(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Choose between Bluetooth polling and MQTT.
+
+        Bluetooth works with no setup at all, so it stays the default. MQTT is
+        offered here rather than during initial setup because it needs a broker
+        the device can reach on port 443 with an anonymous WebSocket listener --
+        real work, and not something to ask about while someone is adding a
+        device.
+
+        Turning it on creates no entities. The existing CO2, temperature and
+        humidity sensors keep their ids and history and simply change what
+        feeds them.
+        """
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            if user_input.get(CONF_MQTT_ENABLED) and not user_input.get(
+                CONF_SERIAL, ""
+            ).strip():
+                errors[CONF_SERIAL] = "serial_required"
+            else:
+                return self.async_create_entry(
+                    data={**self.config_entry.options, **user_input}
+                )
+
+        options = self.config_entry.options
+        suggested_serial = options.get(CONF_SERIAL) or serial_from_name(
+            self.config_entry.title
+        )
+
+        return self.async_show_form(
+            step_id="data_source",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_MQTT_ENABLED,
+                        default=options.get(CONF_MQTT_ENABLED, False),
+                    ): bool,
+                    vol.Optional(CONF_SERIAL, default=suggested_serial): str,
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_provision(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Send WiFi credentials and a broker address over Bluetooth.
+
+        Kept apart from the data-source step on purpose: this rewrites the
+        device's own configuration and needs it awake, which usually means
+        pressing its button first.
+        """
+        errors: dict[str, str] = {}
+        coordinator = self.config_entry.runtime_data
+
+        if user_input is not None:
+            # The vendor cloud used to mint these per device. Nothing we can
+            # observe uses them -- not the telemetry, not the MQTT login -- but
+            # the frame carrying the broker address carries them too, so they
+            # have to be something. Generating once and keeping them in options
+            # spares the user inventing values that do not matter.
+            aes_key = self.config_entry.options.get(CONF_AES_KEY) or base64.b64encode(
+                secrets.token_bytes(16)
+            ).decode()
+            aes_iv = self.config_entry.options.get(CONF_AES_IV) or secrets.token_hex(8)
+
+            try:
+                await coordinator.async_provision(
+                    ssid=user_input[CONF_SSID],
+                    password=user_input[CONF_PASSWORD],
+                    mqtt_server=user_input.get(CONF_MQTT_SERVER) or None,
+                    aes_key=aes_key,
+                    aes_iv=aes_iv,
+                )
+            except HomeAssistantError as err:
+                _LOGGER.warning("Provisioning failed: %s", err)
+                errors["base"] = "provisioning_failed"
+            else:
+                return self.async_create_entry(
+                    data={
+                        **self.config_entry.options,
+                        CONF_AES_KEY: aes_key,
+                        CONF_AES_IV: aes_iv,
+                    }
+                )
+
+        options = self.config_entry.options
+        return self.async_show_form(
+            step_id="provision",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_SSID, default=options.get(CONF_SSID, "")): str,
+                    vol.Required(CONF_PASSWORD): str,
+                    vol.Optional(
+                        CONF_MQTT_SERVER, default=options.get(CONF_MQTT_SERVER, "")
+                    ): str,
+                }
+            ),
             errors=errors,
         )

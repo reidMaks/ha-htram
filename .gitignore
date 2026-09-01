@@ -26,3 +26,17 @@ analysis_output.txt
 # System
 .DS_Store
 Thumbs.db
+
+# Hardware session artifacts. Never commit these:
+# a 4 MB flash image, the broker's self-signed cert and its PRIVATE KEY,
+# raw UART/MQTT capture logs, and the downlink publish queue.
+esp32-dump.bin
+*.pem
+*.log
+outbox.txt
+
+# файл паролів mosquitto, якщо його згенерували в корені репозиторію
+passwd
+
+# оточення для перевірки проти актуального HA (потребує Python 3.14)
+.venv-ha/
