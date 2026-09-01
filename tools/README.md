@@ -740,7 +740,7 @@ modern cipher — the worry about ESP-AT's stack being too old was unfounded.
 | `[22]` | `00` |
 | `[23]` | **temperature °C** |
 | `[24]` | **humidity %** |
-| `[25:27]` | tail — not identified |
+| `[25:27]` | CRC-16/0x8005 over `[16:25]`, little-endian |
 
 Worked example:
 
@@ -805,17 +805,34 @@ So it is a derived quantity that relaxes to zero at the 400 ppm baseline —
 a rate of change or a filter residual rather than a raw sensor count. Eleven
 points are not enough to pin the formula.
 
-The tail resisted a 1008-combination CRC-16 sweep (twelve polynomials, six
-inits, both reflections, both xorouts, seven byte ranges) evaluated against
-every captured packet simultaneously. It also failed as a truncated keyed MAC
-— HMAC-SHA256/SHA1, AES-CMAC, and salted SHA-256/MD5 with the provisioned AES
-key, over four ranges. So it is neither a stock checksum nor a MAC keyed with
-the key we supplied.
+### The tail is a CRC — solved
 
-None of this blocks anything: reading telemetry does not need either field.
-They matter only for *sending* valid downlink commands on `D/<serial>`, and
-the practical way to learn that format is the AT tap — watch what the GD32
-does with a message it receives, rather than guessing at the encoding.
+```
+CRC-16, polynomial 0x8005, init 0, MSB-first, no reflection, no xorout,
+computed over bytes [16:25] and stored LITTLE-endian.
+```
+
+Verified on 73/73 captured packets. Same polynomial as the BLE protocol, but
+stored little-endian there where BLE stores it big-endian.
+
+Two things made this findable after an earlier 1008-combination sweep had
+failed. First, a longer capture produced two pairs of packets whose tails were
+identical while their timestamps differed — they differed in byte `[6]` alone.
+A checksum covering the timestamp could not do that, so the covered range had
+to exclude `[6:10]`, which cut the search space sharply. Second, checking
+against all 73 packets at once makes a false positive impossible.
+
+So the payload is fully accounted for except `mid`:
+
+```
+44 43              magic "DC"
+00 02 00 01        constant
+tt tt tt tt        timestamp, little-endian, UTC      <- outside the CRC
+51 06 00 0c 00 00  constant                           <- outside the CRC
+01 xx xx xx        mid: [16] always 01, [18:20] signed, decays to zero
+cc cc  00  TT  HH  CO2 little-endian, pad, temp C, humidity %
+kk kk              CRC-16/0x8005 of [16:25], little-endian
+```
 
 ### Complete recipe
 

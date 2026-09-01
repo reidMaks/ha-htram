@@ -10,11 +10,16 @@ Payload is 27 bytes on topic C/<serial>, published every 30 s, unencrypted:
     [2:6]   constant 00 02 00 01
     [6:10]  Unix timestamp, little-endian, UTC
     [10:20] mostly constant, four varying bytes at the end
+    [16:25] the measurement block, and exactly what the CRC covers
     [20:22] CO2 ppm, little-endian
     [22]    00
     [23]    temperature, degrees C
     [24]    humidity, percent
-    [25:27] tail, not identified
+    [25:27] CRC-16 over [16:25]: poly 0x8005, init 0, MSB-first,
+            stored LITTLE-endian, unlike the BLE framing which stores it big-
+            endian. The same polynomial, and it deliberately excludes the
+            timestamp -- two packets 30 s apart with identical readings carry
+            identical tails, which is how the covered range was found.
 
 Sentinel values appear while the NDIR sensor warms up after a boot: CO2
 0xFFFE, temperature 0x81, humidity 0xFE. They are not readings and must be
@@ -30,6 +35,16 @@ import sys
 import time
 from datetime import datetime, timezone
 
+
+def crc16(data: bytes, poly: int = 0x8005) -> int:
+    """CRC-16, init 0, MSB-first -- identical to the BLE protocol's."""
+    crc = 0
+    for byte in data:
+        crc ^= byte << 8
+        for _ in range(8):
+            crc = ((crc << 1) ^ poly) & 0xFFFF if crc & 0x8000 else (crc << 1) & 0xFFFF
+    return crc
+
 HEX_RE = re.compile(r"hex\s+([0-9a-f]{20,})")
 
 CO2_INVALID = 0xFFFE
@@ -38,7 +53,8 @@ HUM_INVALID = 0xFE
 
 
 class Reading:
-    __slots__ = ("timestamp", "co2", "temperature", "humidity", "mid", "tail", "raw")
+    __slots__ = ("timestamp", "co2", "temperature", "humidity", "mid", "tail",
+                 "raw", "crc_ok")
 
     def __init__(self, raw: bytes) -> None:
         self.raw = raw
@@ -48,6 +64,7 @@ class Reading:
         self.temperature = raw[23]
         self.humidity = raw[24]
         self.tail = raw[25:27]
+        self.crc_ok = crc16(raw[16:25]) == int.from_bytes(raw[25:27], "little")
 
     @property
     def valid(self) -> bool:
@@ -71,10 +88,10 @@ def render(r: Reading, prev: Reading | None) -> str:
     if not r.valid:
         return (f"{when:%H:%M:%S}  {gap}   "
                 f"CO2 ---- ppm   T --- C   RH --- %   "
-                f"mid {r.mid.hex()}  tail {r.tail.hex()}   <warm-up, discard>")
+                f"mid {r.mid.hex()}  crc {'ok' if r.crc_ok else 'BAD'}   <warm-up, discard>")
     return (f"{when:%H:%M:%S}  {gap}   "
             f"CO2 {r.co2:>4} ppm   T {r.signed_temp():>3} C   RH {r.humidity:>3} %   "
-            f"mid {r.mid.hex()}  tail {r.tail.hex()}")
+            f"mid {r.mid.hex()}  crc {'ok' if r.crc_ok else 'BAD'}")
 
 
 def main() -> int:
@@ -131,9 +148,9 @@ def main() -> int:
     if len(readings) > 1:
         gaps = [b.timestamp - a.timestamp for a, b in zip(readings, readings[1:])]
         print(f"  intervals: {sorted(set(gaps))} s")
-    tails = {r.tail for r in readings}
-    print(f"  distinct tails: {len(tails)} of {len(readings)} — "
-          f"{'looks like a checksum or counter' if len(tails) > 1 else 'constant'}")
+    bad = [r for r in readings if not r.crc_ok]
+    print(f"  CRC: {len(readings) - len(bad)}/{len(readings)} valid"
+          + (f", {len(bad)} BAD" if bad else ""))
     return 0
 
 
