@@ -88,16 +88,33 @@
   "options": {
     "step": {
       "init": {
+        "title": "HTRAM options",
+        "menu_options": {
+          "data_source": "Data source",
+          "provision": "Provision device over Bluetooth"
+        }
+      },
+      "data_source": {
         "title": "Data source",
         "description": "Bluetooth works with no extra setup. MQTT delivers readings every 30 seconds and stops the Bluetooth polling that can disturb the pairing, but the device must already be provisioned to a broker you host: port 443, WebSocket over TLS, anonymous listener. No entities are added either way — the existing sensors just change what feeds them.",
         "data": {
           "mqtt_enabled": "Receive telemetry over MQTT",
           "serial": "Serial number"
         }
+      },
+      "provision": {
+        "title": "Provision device",
+        "description": "Sends the WiFi network, and optionally a broker address, to the monitor over Bluetooth. It only advertises for a short window after losing a connection, so press the button on the device first. The broker address needs a six-character scheme prefix such as tcp:// which the device strips without reading; a hostname works as well as an address. The Bluetooth link is dropped at the end, which is when the device joins.",
+        "data": {
+          "ssid": "WiFi network",
+          "password": "WiFi password",
+          "mqtt_server": "Broker address"
+        }
       }
     },
     "error": {
-      "serial_required": "A serial number is required for MQTT: it is the topic suffix."
+      "serial_required": "A serial number is required for MQTT: it is the topic suffix.",
+      "provisioning_failed": "Could not reach the device. Press its button to make it discoverable, then try again."
     }
   }
 }

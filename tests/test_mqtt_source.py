@@ -154,3 +154,52 @@ def test_provisioning_rejects_a_server_without_keys():
                 ssid="net", password="pw", mqtt_server="tcp://mqtt.example"
             )
         )
+
+
+def test_options_flow_offers_both_steps():
+    """The menu must name the steps the translations describe."""
+    import asyncio
+
+    from htram.config_flow import HTRAMOptionsFlow
+
+    flow = object.__new__(HTRAMOptionsFlow)
+    flow.async_show_menu = lambda **kw: kw
+    result = asyncio.run(flow.async_step_init())
+    assert result["menu_options"] == ["data_source", "provision"]
+
+
+def test_provision_step_reuses_stored_keys():
+    """Re-provisioning must not mint new AES material.
+
+    The values are arbitrary, but changing them on every run would mean the
+    device and any record of it drift apart for no reason.
+    """
+    import asyncio
+
+    from htram.config_flow import HTRAMOptionsFlow
+    from htram.const import CONF_AES_IV, CONF_AES_KEY
+
+    stored = {CONF_AES_KEY: "MDEyMzQ1Njc4OWFiY2RlZg==", CONF_AES_IV: "0123456789abcdef"}
+    seen = {}
+
+    class FakeCoordinator:
+        async def async_provision(self, **kwargs):
+            seen.update(kwargs)
+
+    flow = object.__new__(HTRAMOptionsFlow)
+    entry = MagicMock()
+    entry.options = stored
+    entry.runtime_data = FakeCoordinator()
+    flow._config_entry = entry
+    type(flow).config_entry = property(lambda self: entry)
+    flow.async_create_entry = lambda **kw: kw
+
+    asyncio.run(
+        flow.async_step_provision(
+            {"ssid": "net", "password": "pw", "mqtt_server": "tcp://mqtt.example"}
+        )
+    )
+
+    assert seen["aes_key"] == stored[CONF_AES_KEY]
+    assert seen["aes_iv"] == stored[CONF_AES_IV]
+    assert seen["mqtt_server"] == "tcp://mqtt.example"

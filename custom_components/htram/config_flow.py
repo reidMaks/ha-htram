@@ -1,7 +1,9 @@
 """Config flow for HTRAM integration."""
 from __future__ import annotations
 
+import base64
 import logging
+import secrets
 from typing import Any
 
 import voluptuous as vol
@@ -17,10 +19,20 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlow,
 )
-from homeassistant.const import CONF_ADDRESS
+from homeassistant.const import CONF_ADDRESS, CONF_PASSWORD
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.core import callback
 
-from .const import CONF_MQTT_ENABLED, CONF_SERIAL, DOMAIN, SERVICE_UUID
+from .const import (
+    CONF_AES_IV,
+    CONF_AES_KEY,
+    CONF_MQTT_ENABLED,
+    CONF_MQTT_SERVER,
+    CONF_SERIAL,
+    CONF_SSID,
+    DOMAIN,
+    SERVICE_UUID,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -212,33 +224,50 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class HTRAMOptionsFlow(OptionsFlow):
-    """Options: where the readings come from.
+    """Options: where readings come from, and provisioning the device."""
 
-    Bluetooth works with no setup at all, so it stays the default. MQTT is
-    offered here rather than during initial setup because it needs a broker the
-    device can reach on port 443 with an anonymous WebSocket listener -- real
-    work, and not something to ask about while someone is adding a device.
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Offer the two things worth changing after setup."""
+        return self.async_show_menu(
+            step_id="init", menu_options=["data_source", "provision"]
+        )
 
-    Turning it on creates no entities. The existing CO2, temperature and
-    humidity sensors keep their ids and history and simply change what feeds
-    them.
-    """
+    async def async_step_data_source(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Choose between Bluetooth polling and MQTT.
 
-    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Show and store the options."""
+        Bluetooth works with no setup at all, so it stays the default. MQTT is
+        offered here rather than during initial setup because it needs a broker
+        the device can reach on port 443 with an anonymous WebSocket listener --
+        real work, and not something to ask about while someone is adding a
+        device.
+
+        Turning it on creates no entities. The existing CO2, temperature and
+        humidity sensors keep their ids and history and simply change what
+        feeds them.
+        """
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            if user_input.get(CONF_MQTT_ENABLED) and not user_input.get(CONF_SERIAL, "").strip():
+            if user_input.get(CONF_MQTT_ENABLED) and not user_input.get(
+                CONF_SERIAL, ""
+            ).strip():
                 errors[CONF_SERIAL] = "serial_required"
             else:
-                return self.async_create_entry(data=user_input)
+                return self.async_create_entry(
+                    data={**self.config_entry.options, **user_input}
+                )
 
         options = self.config_entry.options
-        suggested_serial = options.get(CONF_SERIAL) or serial_from_name(self.config_entry.title)
+        suggested_serial = options.get(CONF_SERIAL) or serial_from_name(
+            self.config_entry.title
+        )
 
         return self.async_show_form(
-            step_id="init",
+            step_id="data_source",
             data_schema=vol.Schema(
                 {
                     vol.Required(
@@ -246,6 +275,64 @@ class HTRAMOptionsFlow(OptionsFlow):
                         default=options.get(CONF_MQTT_ENABLED, False),
                     ): bool,
                     vol.Optional(CONF_SERIAL, default=suggested_serial): str,
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_provision(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Send WiFi credentials and a broker address over Bluetooth.
+
+        Kept apart from the data-source step on purpose: this rewrites the
+        device's own configuration and needs it awake, which usually means
+        pressing its button first.
+        """
+        errors: dict[str, str] = {}
+        coordinator = self.config_entry.runtime_data
+
+        if user_input is not None:
+            # The vendor cloud used to mint these per device. Nothing we can
+            # observe uses them -- not the telemetry, not the MQTT login -- but
+            # the frame carrying the broker address carries them too, so they
+            # have to be something. Generating once and keeping them in options
+            # spares the user inventing values that do not matter.
+            aes_key = self.config_entry.options.get(CONF_AES_KEY) or base64.b64encode(
+                secrets.token_bytes(16)
+            ).decode()
+            aes_iv = self.config_entry.options.get(CONF_AES_IV) or secrets.token_hex(8)
+
+            try:
+                await coordinator.async_provision(
+                    ssid=user_input[CONF_SSID],
+                    password=user_input[CONF_PASSWORD],
+                    mqtt_server=user_input.get(CONF_MQTT_SERVER) or None,
+                    aes_key=aes_key,
+                    aes_iv=aes_iv,
+                )
+            except HomeAssistantError as err:
+                _LOGGER.warning("Provisioning failed: %s", err)
+                errors["base"] = "provisioning_failed"
+            else:
+                return self.async_create_entry(
+                    data={
+                        **self.config_entry.options,
+                        CONF_AES_KEY: aes_key,
+                        CONF_AES_IV: aes_iv,
+                    }
+                )
+
+        options = self.config_entry.options
+        return self.async_show_form(
+            step_id="provision",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_SSID, default=options.get(CONF_SSID, "")): str,
+                    vol.Required(CONF_PASSWORD): str,
+                    vol.Optional(
+                        CONF_MQTT_SERVER, default=options.get(CONF_MQTT_SERVER, "")
+                    ): str,
                 }
             ),
             errors=errors,

@@ -24,6 +24,14 @@ TELEMETRY_TOPIC = "C/{serial}"
 # Options keys.
 CONF_MQTT_ENABLED = "mqtt_enabled"
 CONF_SERIAL = "serial"
+CONF_SSID = "ssid"
+CONF_MQTT_SERVER = "mqtt_server"
+
+# Generated once and kept so re-provisioning does not change them. The vendor
+# cloud minted these per device; nothing observable uses them, but the frame
+# carrying the broker address carries them too.
+CONF_AES_KEY = "aes_key"
+CONF_AES_IV = "aes_iv"
 
 # The device publishes every 30 s. Ten missed messages is a clear enough signal
 # that it is gone, without reacting to a single dropped one.
