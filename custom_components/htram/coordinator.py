@@ -1,5 +1,6 @@
 """DataUpdateCoordinator for HTRAM."""
 import asyncio
+import base64
 import logging
 from datetime import timedelta
 import async_timeout
@@ -27,7 +28,7 @@ from .const import (
     CMD_HEARTBEAT,
     POLL_INTERVAL
 )
-from . import utils
+from . import protocol
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -402,12 +403,17 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def async_provision_wifi(self, ssid: str, password: str):
         """Provision WiFi credentials."""
-        packet = utils.construct_submit_ssid(ssid, password)
+        packet = protocol.wifi_credentials(ssid, password)
         _LOGGER.debug(f"Provisioning WiFi: {ssid}")
         await self._send_command(packet)
 
     async def async_provision_mqtt(self, mqtt_server: str, aes_key: str, aes_iv: str):
-        """Provision custom MQTT server."""
-        packet = utils.construct_submit_aes_key(aes_key, aes_iv, mqtt_server)
+        """Provision the MQTT endpoint and crypto material.
+
+        The key arrives Base64-encoded, as the vendor cloud issued it; the IV
+        goes to the device as the raw bytes of its string. That asymmetry is
+        the app's.
+        """
+        packet = protocol.cloud_config(base64.b64decode(aes_key), aes_iv, mqtt_server)
         _LOGGER.debug(f"Provisioning MQTT: {mqtt_server}")
         await self._send_command(packet)

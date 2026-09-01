@@ -34,3 +34,6 @@ esp32-dump.bin
 *.pem
 *.log
 outbox.txt
+
+# файл паролів mosquitto, якщо його згенерували в корені репозиторію
+passwd
