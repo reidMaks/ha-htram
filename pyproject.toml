@@ -3,7 +3,7 @@ name = "htram"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "bleak>=2.1.1",
     "esptool>=5.3.1",
@@ -15,6 +15,7 @@ dev = [
     "aiousbwatcher>=1.1.2",
     "homeassistant>=2025.4.4",
     "pytest>=9.1.1",
+    "serialx>=1.9.0",
 ]
 
 [tool.pytest.ini_options]
