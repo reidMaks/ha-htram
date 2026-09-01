@@ -8,7 +8,8 @@
       "cannot_connect": "Failed to connect",
       "pairing_failed": "Connection failed (Services not found). Please make sure to ACCEPT THE PAIRING/PIN REQUEST on your Home Assistant host/server!",
       "adapter_limit_reached": "Bluetooth adapter limit reached (too many connections). Try waiting or removing other devices.",
-      "unknown": "Unexpected error"
+      "unknown": "Unexpected error",
+      "not_advertising": "The monitor did not answer. It only advertises for a short window after losing a connection: press the button on the device, then try again."
     },
     "step": {
       "bluetooth_confirm": {

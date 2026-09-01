@@ -119,22 +119,28 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
                      await asyncio.sleep(2) 
                      await client.stop_notify(NOTIFY_UUID)
                      
-                 except (BleakError, Exception) as e:
+                 except BleakError as e:
+                     # Usually means pairing has not completed yet. The device is
+                     # reachable, which is what this step is really checking.
                      _LOGGER.warning(f"Notify setup warning (might need pairing): {e}")
-                     # If this failed, it might be because we need pairing but the prompt hasn't been answered yet.
-                     # We'll just catch it; correct timeout logic above usually handles the user delay.
-                     pass
 
                  return None
 
 
+        except (TimeoutError, asyncio.CancelledError):
+            # The commonest outcome by far, and it used to surface as "unknown
+            # error". The monitor advertises only for a short window after it
+            # loses a connection; outside that window the connection attempt
+            # simply times out, and the fix is to press its button.
+            _LOGGER.warning("Timed out connecting to %s: not advertising", device.address)
+            return {"base": "not_advertising"}
         except BleakError as e:
             _LOGGER.error(f"Could not connect to HTRAM: {e}")
             msg = str(e).lower()
             if "no backend with an available connection slot" in msg:
                 return {"base": "adapter_limit_reached"}
             if "failed to discover services" in msg:
-                return {"base": "pairing_failed"} # This usually means pairing didn't complete in time
+                return {"base": "pairing_failed"}
             return {"base": "cannot_connect"}
         except Exception as e:
             _LOGGER.exception(f"Unexpected error connecting to HTRAM: {e}")
