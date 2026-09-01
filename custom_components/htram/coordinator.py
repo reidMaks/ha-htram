@@ -3,7 +3,6 @@ import asyncio
 import base64
 import logging
 from datetime import timedelta
-import async_timeout
 
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
@@ -66,7 +65,10 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
                 self.ble_device = ble_device
 
             # Use a larger timeout for the entire update cycle
-            async with async_timeout.timeout(30):
+            # asyncio.timeout is stdlib since 3.11; HA stopped shipping the
+            # async_timeout backport, and it was never in our requirements,
+            # so importing it now stops the integration from loading at all.
+            async with asyncio.timeout(30):
                 if not self._client or not self._client.is_connected:
                      # Connect will happen below
                      pass

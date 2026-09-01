@@ -6,8 +6,8 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
-    CONCENTRATION_PARTS_PER_MILLION,
     PERCENTAGE,
+    UnitOfRatio,
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
@@ -27,7 +27,7 @@ async def async_setup_entry(
     coordinator: HTRAMDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
     
     entities = [
-        HTRAMSensor(coordinator, "co2", "CO2", SensorDeviceClass.CO2, CONCENTRATION_PARTS_PER_MILLION),
+        HTRAMSensor(coordinator, "co2", "CO2", SensorDeviceClass.CO2, UnitOfRatio.PARTS_PER_MILLION),
         HTRAMSensor(coordinator, "temperature", "Temperature", SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS),
         HTRAMSensor(coordinator, "humidity", "Humidity", SensorDeviceClass.HUMIDITY, PERCENTAGE),
         HTRAMSensor(coordinator, "battery", "Battery", SensorDeviceClass.BATTERY, PERCENTAGE),
