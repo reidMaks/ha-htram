@@ -212,6 +212,33 @@ BLE-сутності показують останнє відоме значен
 `docs/mosquitto/` — готові `mosquitto.conf`, `acl.device`, команда генерації
 сертифіката й пояснення, чому лістенер анонімний.
 
+## 3b. Застаріле API Home Assistant
+
+Інтеграція писалася давно, тож я перевірив її проти справжнього HA 2026.2.3,
+встановленого в оточення, а не за документацією. Добра новина: **жоден модуль
+не зламаний**, усі імпортуються без помилок. Але кілька речей уже застарілі,
+і одна з них має дату.
+
+| Що | Стан | Де |
+| --- | --- | --- |
+| `DataUpdateCoordinator` без `config_entry` | **перестане працювати у 2026.8** | `coordinator.py` |
+| `hass.data[DOMAIN][entry.entry_id]` | витіснено `entry.runtime_data` | `__init__.py` і всі платформи |
+| `FlowResult` | застаріле, тепер `ConfigFlowResult` | `config_flow.py` |
+| `BluetoothServiceInfo` | у discovery приходить `BluetoothServiceInfoBleak` | `config_flow.py` |
+| `AddEntitiesCallback` | тепер `AddConfigEntryEntitiesCallback` | усі платформи |
+| `DeviceInfo` з `helpers.entity` | канонічно з `helpers.device_registry` | `sensor.py` |
+
+Дату видно прямо в коді HA:
+
+```python
+config_entry: ConfigEntry | None | UndefinedType = UNDEFINED,
+...
+frame.report_usage(..., breaks_in_ha_version="2026.8")
+```
+
+Це виправлено одразу, бо зміна ізольована. Решта припадає на файли, які й так
+переписуються у фазах 3 і 4, тож робиться там, а не окремим проходом.
+
 ## 4. Дрібні баги, які лагодимо принагідно
 
 * `__init__.py` викликає `asyncio.sleep` у сервісі `configure_device`, але

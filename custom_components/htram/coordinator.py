@@ -9,6 +9,7 @@ from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 
 from homeassistant.components import bluetooth
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -35,11 +36,19 @@ _LOGGER = logging.getLogger(__name__)
 class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching HTRAM data."""
 
-    def __init__(self, hass: HomeAssistant, ble_device: BLEDevice) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        ble_device: BLEDevice,
+    ) -> None:
         """Initialize."""
+        # config_entry became required in HA 2026.8; omitting it logs a
+        # deprecation now and stops working then.
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=config_entry,
             name=DOMAIN,
             update_interval=timedelta(seconds=POLL_INTERVAL),
         )

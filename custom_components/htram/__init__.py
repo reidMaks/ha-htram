@@ -23,7 +23,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not ble_device:
         raise ConfigEntryNotReady(f"Could not find HTRAM device with address {address}")
 
-    coordinator = HTRAMDataUpdateCoordinator(hass, ble_device)
+    coordinator = HTRAMDataUpdateCoordinator(hass, entry, ble_device)
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})
