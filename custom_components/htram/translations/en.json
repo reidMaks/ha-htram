@@ -1,81 +1,103 @@
 {
-    "config": {
-        "abort": {
-            "already_configured": "Device is already configured",
-            "no_devices_found": "No HTRAM devices found on the network. Make sure it is in pairing mode (double click button)."
-        },
-        "error": {
-            "cannot_connect": "Failed to connect",
-            "pairing_failed": "Connection failed (Services not found). Please make sure to ACCEPT THE PAIRING/PIN REQUEST on your Home Assistant host/server!",
-            "adapter_limit_reached": "Bluetooth adapter limit reached (too many connections). Try waiting or removing other devices.",
-            "unknown": "Unexpected error"
-        },
-        "step": {
-            "bluetooth_confirm": {
-                "description": "Do you want to set up {name}?",
-                "title": "Discovered HTRAM Device"
-            },
-            "user": {
-                "data": {
-                    "address": "Device"
-                },
-                "description": "Select an HTRAM device to set up"
-            }
-        }
+  "config": {
+    "abort": {
+      "already_configured": "Device is already configured",
+      "no_devices_found": "No HTRAM devices found on the network. Make sure it is in pairing mode (double click button)."
     },
-    "entity": {
-        "sensor": {
-            "co2": {
-                "name": "CO2"
-            },
-            "temperature": {
-                "name": "Temperature"
-            },
-            "humidity": {
-                "name": "Humidity"
-            },
-            "battery": {
-                "name": "Battery Level"
-            }
+    "error": {
+      "cannot_connect": "Failed to connect",
+      "pairing_failed": "Connection failed (Services not found). Please make sure to ACCEPT THE PAIRING/PIN REQUEST on your Home Assistant host/server!",
+      "adapter_limit_reached": "Bluetooth adapter limit reached (too many connections). Try waiting or removing other devices.",
+      "unknown": "Unexpected error"
+    },
+    "step": {
+      "bluetooth_confirm": {
+        "description": "Do you want to set up {name}?",
+        "title": "Discovered HTRAM Device"
+      },
+      "user": {
+        "data": {
+          "address": "Device"
         },
-        "binary_sensor": {
-            "charging": {
-                "name": "Charging"
-            }
-        },
-        "switch": {
-            "mute": {
-                "name": "Mute"
-            }
-        },
-        "number": {
-            "alarm_low": {
-                "name": "CO2 Alarm Low"
-            },
-            "alarm_high": {
-                "name": "CO2 Alarm High"
-            }
-        },
-        "select": {
-            "temp_unit": {
-                "state": {
-                    "celsius": "Celsius",
-                    "fahrenheit": "Fahrenheit"
-                },
-                "name": "Temperature Unit"
-            },
-            "screen_off": {
-                "state": {
-                    "always_on": "Always On",
-                    "auto_off_2_min": "Auto Off (2 min)"
-                },
-                "name": "Screen Off Timer"
-            }
-        },
-        "button": {
-            "sync_time": {
-                "name": "Sync Time"
-            }
-        }
+        "description": "Select an HTRAM device to set up"
+      }
     }
+  },
+  "entity": {
+    "sensor": {
+      "co2": {
+        "name": "CO2"
+      },
+      "temperature": {
+        "name": "Temperature"
+      },
+      "humidity": {
+        "name": "Humidity"
+      },
+      "battery": {
+        "name": "Battery Level"
+      },
+      "source": {
+        "name": "Data source",
+        "state": {
+          "bluetooth": "Bluetooth",
+          "mqtt": "MQTT"
+        }
+      }
+    },
+    "binary_sensor": {
+      "charging": {
+        "name": "Charging"
+      }
+    },
+    "switch": {
+      "mute": {
+        "name": "Mute"
+      }
+    },
+    "number": {
+      "alarm_low": {
+        "name": "CO2 Alarm Low"
+      },
+      "alarm_high": {
+        "name": "CO2 Alarm High"
+      }
+    },
+    "select": {
+      "temp_unit": {
+        "state": {
+          "celsius": "Celsius",
+          "fahrenheit": "Fahrenheit"
+        },
+        "name": "Temperature Unit"
+      },
+      "screen_off": {
+        "state": {
+          "always_on": "Always On",
+          "auto_off_2_min": "Auto Off (2 min)"
+        },
+        "name": "Screen Off Timer"
+      }
+    },
+    "button": {
+      "sync_time": {
+        "name": "Sync Time"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Data source",
+        "description": "Bluetooth works with no extra setup. MQTT delivers readings every 30 seconds and stops the Bluetooth polling that can disturb the pairing, but the device must already be provisioned to a broker you host: port 443, WebSocket over TLS, anonymous listener. No entities are added either way — the existing sensors just change what feeds them.",
+        "data": {
+          "mqtt_enabled": "Receive telemetry over MQTT",
+          "serial": "Serial number"
+        }
+      }
+    },
+    "error": {
+      "serial_required": "A serial number is required for MQTT: it is the topic suffix."
+    }
+  }
 }

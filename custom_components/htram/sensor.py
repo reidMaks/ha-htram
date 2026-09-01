@@ -5,6 +5,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.const import (
     PERCENTAGE,
     UnitOfRatio,
@@ -31,6 +32,7 @@ async def async_setup_entry(
         HTRAMSensor(coordinator, "temperature", "Temperature", SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS),
         HTRAMSensor(coordinator, "humidity", "Humidity", SensorDeviceClass.HUMIDITY, PERCENTAGE),
         HTRAMSensor(coordinator, "battery", "Battery", SensorDeviceClass.BATTERY, PERCENTAGE),
+        HTRAMSourceSensor(coordinator),
     ]
     async_add_entities(entities)
 
@@ -73,3 +75,32 @@ class HTRAMSensor(CoordinatorEntity, SensorEntity):
     def native_value(self):
         """Return the state of the sensor."""
         return self.coordinator.data.get(self._key)
+
+
+class HTRAMSourceSensor(CoordinatorEntity, SensorEntity):
+    """Which transport the readings are currently arriving on.
+
+    Without this the switch between Bluetooth and MQTT is invisible, and when
+    it goes wrong there is nothing to look at. Diagnostic, so it stays out of
+    the way until wanted.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "source"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["bluetooth", "mqtt"]
+
+    def __init__(self, coordinator: HTRAMDataUpdateCoordinator) -> None:
+        """Initialize the diagnostic sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.address}_source"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, coordinator.address)},
+            "connections": {(dr.CONNECTION_BLUETOOTH, coordinator.address)},
+        }
+
+    @property
+    def native_value(self) -> str:
+        """Return the active source."""
+        return self.coordinator.active_source

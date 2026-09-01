@@ -8,31 +8,50 @@ import voluptuous as vol
 
 from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import (
-    BluetoothServiceInfo,
+    BluetoothServiceInfoBleak,
     async_discovered_service_info,
 )
-from homeassistant.config_entries import ConfigFlow
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.const import CONF_ADDRESS
-from homeassistant.data_entry_flow import FlowResult
+from homeassistant.core import callback
 
-from .const import DOMAIN, SERVICE_UUID
+from .const import CONF_MQTT_ENABLED, CONF_SERIAL, DOMAIN, SERVICE_UUID
 
 _LOGGER = logging.getLogger(__name__)
+
+def serial_from_name(name: str | None) -> str:
+    """Pull the serial number out of an advertised name like HTRAM-RM1221412257."""
+    if not name:
+        return ""
+    _, _, serial = name.partition("-")
+    return serial or ""
+
 
 class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for HTRAM."""
 
     VERSION = 1
 
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        """Return the options flow."""
+        return HTRAMOptionsFlow()
+
     def __init__(self) -> None:
         """Initialize the config flow."""
-        self._discovery_info: BluetoothServiceInfo | None = None
+        self._discovery_info: BluetoothServiceInfoBleak | None = None
         self._discovered_device: Any = None
         self._discovered_devices: dict[str, Any] = {}
 
     async def async_step_bluetooth(
-        self, discovery_info: BluetoothServiceInfo
-    ) -> FlowResult:
+        self, discovery_info: BluetoothServiceInfoBleak
+    ) -> ConfigFlowResult:
         """Handle the bluetooth discovery step."""
         _LOGGER.debug(f"Discovered HTRAM device: {discovery_info}")
         await self.async_set_unique_id(discovery_info.address)
@@ -47,7 +66,7 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
         return await self.async_step_bluetooth_confirm()
 
 
-    async def _async_verify_connection(self, discovery_info: BluetoothServiceInfo) -> dict[str, str] | None:
+    async def _async_verify_connection(self, discovery_info: BluetoothServiceInfoBleak) -> dict[str, str] | None:
         """Verify we can connect and pair with the device."""
         from bleak import BleakClient, BleakError
         from bleak_retry_connector import establish_connection
@@ -112,7 +131,7 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_bluetooth_confirm(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Confirm discovery."""
         errors: dict[str, str] = {}
         
@@ -136,7 +155,7 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle the user step to pick discovered device."""
         errors: dict[str, str] = {}
         
@@ -188,5 +207,46 @@ class HTRAMConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema({
                 vol.Required(CONF_ADDRESS): vol.In(titles),
             }),
+            errors=errors,
+        )
+
+
+class HTRAMOptionsFlow(OptionsFlow):
+    """Options: where the readings come from.
+
+    Bluetooth works with no setup at all, so it stays the default. MQTT is
+    offered here rather than during initial setup because it needs a broker the
+    device can reach on port 443 with an anonymous WebSocket listener -- real
+    work, and not something to ask about while someone is adding a device.
+
+    Turning it on creates no entities. The existing CO2, temperature and
+    humidity sensors keep their ids and history and simply change what feeds
+    them.
+    """
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Show and store the options."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            if user_input.get(CONF_MQTT_ENABLED) and not user_input.get(CONF_SERIAL, "").strip():
+                errors[CONF_SERIAL] = "serial_required"
+            else:
+                return self.async_create_entry(data=user_input)
+
+        options = self.config_entry.options
+        suggested_serial = options.get(CONF_SERIAL) or serial_from_name(self.config_entry.title)
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_MQTT_ENABLED,
+                        default=options.get(CONF_MQTT_ENABLED, False),
+                    ): bool,
+                    vol.Optional(CONF_SERIAL, default=suggested_serial): str,
+                }
+            ),
             errors=errors,
         )

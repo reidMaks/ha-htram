@@ -7,8 +7,9 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from .const import DOMAIN
+from .const import CONF_MQTT_ENABLED, CONF_SERIAL, DOMAIN
 from .coordinator import HTRAMDataUpdateCoordinator
+from .mqtt_source import HtramMqttSource
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH, Platform.NUMBER, Platform.SELECT, Platform.BUTTON]
 
@@ -24,12 +25,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady(f"Could not find HTRAM device with address {address}")
 
     coordinator = HTRAMDataUpdateCoordinator(hass, entry, ble_device)
+    coordinator.mqtt_enabled = entry.options.get(CONF_MQTT_ENABLED, False)
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    hass.data[DOMAIN][entry.entry_id] = coordinator
+    # Telemetry over MQTT is opt-in: it needs a broker the device can reach,
+    # which is a good deal of setup, so nothing here assumes it.
+    if coordinator.mqtt_enabled:
+        serial = entry.options.get(CONF_SERIAL)
+        if serial:
+            source = HtramMqttSource(hass, coordinator, serial)
+            if await source.async_start():
+                entry.async_on_unload(source.async_stop)
+        else:
+            _LOGGER.error(
+                "MQTT telemetry is enabled but no serial number is configured; "
+                "reconfigure the integration"
+            )
+
+    entry.async_on_unload(entry.add_update_listener(_async_reload_on_options_change))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -77,6 +93,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_register(DOMAIN, "configure_device", handle_configure_device, schema=SERVICE_SCHEMA)
 
     return True
+
+async def _async_reload_on_options_change(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Re-run setup so a changed data source takes effect immediately."""
+    await hass.config_entries.async_reload(entry.entry_id)
+
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""

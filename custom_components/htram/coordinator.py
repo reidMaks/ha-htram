@@ -1,6 +1,7 @@
 """DataUpdateCoordinator for HTRAM."""
 import asyncio
 import base64
+import time
 import logging
 from datetime import timedelta
 
@@ -26,6 +27,8 @@ from .const import (
     CMD_SET_TEMP_UNIT_F,
     CMD_HEARTBEAT,
     CMD_HEARTBEAT,
+    MQTT_KEYS,
+    MQTT_STALE_AFTER,
     POLL_INTERVAL
 )
 from . import protocol
@@ -56,8 +59,62 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         self.data = {}
         self._client = None
 
+        # Set by __init__.py from the config entry options. When telemetry is
+        # arriving over MQTT the Bluetooth poll skips the realtime request,
+        # which is most of what it does -- fewer connections, fewer chances to
+        # disturb the pairing.
+        self.mqtt_enabled = False
+        self._mqtt_last_seen: float | None = None
+
+    @property
+    def mqtt_is_fresh(self) -> bool:
+        """Whether MQTT telemetry arrived recently enough to be trusted."""
+        if not self.mqtt_enabled or self._mqtt_last_seen is None:
+            return False
+        return (time.monotonic() - self._mqtt_last_seen) < MQTT_STALE_AFTER
+
+    @property
+    def active_source(self) -> str:
+        """Where the CO2, temperature and humidity readings are coming from."""
+        return "mqtt" if self.mqtt_is_fresh else "bluetooth"
+
+    def async_apply_telemetry(self, reading) -> None:
+        """Merge an MQTT reading and notify entities.
+
+        The keys are the same ones the Bluetooth path writes, so the entities
+        never learn which transport fed them -- entity ids and history stay
+        continuous across a switch.
+        """
+        self._mqtt_last_seen = time.monotonic()
+        self.data["co2"] = reading.co2
+        self.data["temperature"] = reading.temperature
+        self.data["humidity"] = reading.humidity
+        self.data["last_telemetry"] = reading.timestamp
+        self.async_set_updated_data(self.data)
+
+    def _expire_stale_mqtt(self) -> None:
+        """Drop readings MQTT stopped refreshing.
+
+        Falling back to Bluetooth polling here would be tempting, but that is
+        the very thing that disturbs the pairing, and doing it silently while
+        nobody is watching is how a working setup quietly degrades. Showing
+        the sensors as unavailable is the honest answer.
+        """
+        if not self.mqtt_enabled or self.mqtt_is_fresh:
+            return
+        if self._mqtt_last_seen is None:
+            return
+        if any(self.data.get(key) is not None for key in MQTT_KEYS):
+            _LOGGER.warning(
+                "No telemetry on MQTT for over %d s; marking readings unavailable",
+                MQTT_STALE_AFTER,
+            )
+        for key in MQTT_KEYS:
+            self.data[key] = None
+
     async def _async_update_data(self):
         """Fetch data from the device."""
+        self._expire_stale_mqtt()
         try:
             # Re-discover device to get fresh objects
             ble_device = bluetooth.async_ble_device_from_address(self.hass, self.address, connectable=True)
@@ -119,14 +176,17 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
 
                 timeout_occurred = False
 
-                # 1. Get Realtime Data
-                await client.write_gatt_char(WRITE_UUID, CMD_GET_REALTIME, response=False)
-                try:
-                    data = await asyncio.wait_for(realtime_future, timeout=5.0)
-                    self._parse_realtime(data)
-                except asyncio.TimeoutError:
-                    _LOGGER.warning("Timeout waiting for realtime data")
-                    timeout_occurred = True
+                # 1. Get Realtime Data -- unless MQTT is already supplying it.
+                # The battery and charging flags ride along in the same answer,
+                # so this is still requested occasionally rather than never.
+                if not self.mqtt_is_fresh:
+                    await client.write_gatt_char(WRITE_UUID, CMD_GET_REALTIME, response=False)
+                    try:
+                        data = await asyncio.wait_for(realtime_future, timeout=5.0)
+                        self._parse_realtime(data)
+                    except asyncio.TimeoutError:
+                        _LOGGER.warning("Timeout waiting for realtime data")
+                        timeout_occurred = True
 
                 # 2. Get Sound Status
                 await client.write_gatt_char(WRITE_UUID, CMD_GET_SOUND_STATUS, response=False)

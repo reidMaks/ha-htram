@@ -17,6 +17,21 @@ WRITE_UUID = "3D115840-6E0B-11E4-B24F-0002A5D5C51B"
 # How often to poll over Bluetooth, in seconds.
 POLL_INTERVAL = 60
 
+# Telemetry topics. The device publishes on C/ and subscribes on D/, using its
+# serial number as both the client id and the topic suffix.
+TELEMETRY_TOPIC = "C/{serial}"
+
+# Options keys.
+CONF_MQTT_ENABLED = "mqtt_enabled"
+CONF_SERIAL = "serial"
+
+# The device publishes every 30 s. Ten missed messages is a clear enough signal
+# that it is gone, without reacting to a single dropped one.
+MQTT_STALE_AFTER = 300
+
+# Keys the MQTT payload carries. Everything else stays on Bluetooth.
+MQTT_KEYS = ("co2", "temperature", "humidity")
+
 # Built once at import: the bodies never vary.
 CMD_GET_REALTIME = protocol.realtime()
 CMD_HEARTBEAT = protocol.heartbeat()
