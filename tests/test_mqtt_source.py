@@ -247,3 +247,27 @@ def test_mute_is_the_inverse_of_the_buzzer():
     assert coord.data["mute"] is True
     coord._parse_sound(protocol.build_frame(b"\x27\x23", bytes([0x01, 0x00, 0x00, 0x01])))
     assert coord.data["mute"] is False
+
+
+def test_bluetooth_failure_never_fails_the_coordinator_with_mqtt(coordinator):
+    """With MQTT configured, the radio must not decide the entry's fate.
+
+    Tolerating only *fresh* telemetry meant that a restart, or a gap in
+    telemetry, still raised UpdateFailed -- which marks every entity
+    unavailable, including the ones MQTT feeds.
+    """
+    coordinator.mqtt_enabled = True
+    coordinator.data["co2"] = 700
+
+    # No telemetry has ever arrived, so nothing is fresh.
+    assert coordinator.mqtt_is_fresh is False
+    assert coordinator._tolerate_ble_failure("not advertising") is coordinator.data
+
+
+def test_bluetooth_failure_still_fails_without_mqtt(coordinator):
+    """Bluetooth-only setups have no other source, so the failure is real."""
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    coordinator.mqtt_enabled = False
+    with pytest.raises(UpdateFailed):
+        coordinator._tolerate_ble_failure("not advertising")

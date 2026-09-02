@@ -125,8 +125,14 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         with it, including the ones MQTT is still feeding.
         """
         self.ble_ok = False
-        if self.mqtt_is_fresh:
-            _LOGGER.debug("Bluetooth poll failed (%s); MQTT is still supplying data", reason)
+        if self.mqtt_enabled:
+            # Not just when telemetry is fresh: with MQTT configured it is the
+            # primary source, and the coordinator's success state should not
+            # track the radio at all. Stale readings are already blanked by
+            # _expire_stale_mqtt, which is the honest signal -- failing the
+            # coordinator instead would take every entity down, including the
+            # ones telemetry feeds.
+            _LOGGER.debug("Bluetooth poll failed (%s); MQTT remains the source", reason)
             return self.data
         raise UpdateFailed(reason)
 
@@ -253,6 +259,11 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         except BleakError as func_call_error:
             await self._cleanup_client()
             return self._tolerate_ble_failure(f"Bluetooth error: {func_call_error}")
+        except UpdateFailed:
+            # Ours, and already explanatory. Re-wrapping it produced log lines
+            # reading "Unexpected error: UpdateFailed('... is not advertising')".
+            await self._cleanup_client()
+            raise
         except Exception as e:
             await self._cleanup_client()
             raise UpdateFailed(f"Unexpected error: {repr(e)}") from e
