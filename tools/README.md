@@ -963,6 +963,47 @@ way.
 
 ---
 
+## 8g. Untried: reading device memory over BLE with `0x2093`
+
+**Not yet attempted.** Written down so it is not lost.
+
+`CMBLERequest.fetchDataLog` builds a frame the app never calls:
+
+```java
+byte[] bArr = {123, 65, 0, 10, 32, -109, 1, -1, -1, -1, -1, 0, 0, 125};
+bArr2[7] = bArr[0]; ... bArr2[10] = bArr[3];   // a 32-bit address
+```
+
+Opcode `0x2093`, body `01 <A0 A1 A2 A3>`, answer opcode `0x2193`. The app's
+default address is `FF FF FF FF`, and **no code in the app calls it** -- it is
+a leftover in the SDK, which is exactly the kind of thing that tends to be
+least guarded.
+
+If the address is a raw memory address rather than an index into the 90-day
+measurement log, this reads the GD32's flash over Bluetooth, and the firmware
+can be dumped without SWD. That firmware is the only remaining source for the
+downlink format: the vendor cloud is gone, the portal survives only as a
+JavaScript shell in the Wayback Machine, and the app never speaks to the
+device except during provisioning.
+
+Frames to send with `htram_wifi.py raw <MAC> <hex>`:
+
+| Address | Frame |
+| --- | --- |
+| `FF FF FF FF`, the app's default | `7b41000a209301ffffffffd6647d` |
+| `0x00000000` | `7b41000a20930100000000564d7d` |
+| `0x08000000` big-endian | `7b41000a20930108000000764e7d` |
+| `0x08000000` little-endian | `7b41000a20930100000008d67e7d` |
+
+`0x08000000` is the GD32F1 flash base. A Cortex-M image starts with its vector
+table: four bytes of initial stack pointer, which for this part means
+`0x2000xxxx` since SRAM starts at `0x20000000`, then four bytes of reset
+handler at `0x0800xxxx`. Seeing that pair in the answer means the read is
+unbounded and the dump is on.
+
+The device must be within Bluetooth range of the machine running the tool.
+Through a distant ESPHome proxy at -96 dBm it will not connect.
+
 ## 9. Status summary
 
 | Item | State |
