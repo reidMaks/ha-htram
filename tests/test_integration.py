@@ -281,3 +281,25 @@ async def test_readings_survive_losing_bluetooth(
         assert hass.states.get(switch).state == "unavailable"
     finally:
         ble_reachable = True
+
+
+async def test_polling_is_rare_when_mqtt_supplies_the_readings(
+    hass: HomeAssistant, custom_integration, ble_device, mqtt_mock
+):
+    """Bluetooth should stay out of the way when it is not the source.
+
+    The device suspends telemetry while a Bluetooth session is open, so with
+    MQTT configured the radio is only wanted occasionally, for the battery and
+    the settings.
+    """
+    entry = await setup_entry(
+        hass, ble_device, options={CONF_MQTT_ENABLED: True, CONF_SERIAL: SERIAL}
+    )
+    assert entry.runtime_data.update_interval.total_seconds() == 900
+
+
+async def test_polling_stays_frequent_without_mqtt(
+    hass: HomeAssistant, custom_integration, ble_device
+):
+    entry = await setup_entry(hass, ble_device)
+    assert entry.runtime_data.update_interval.total_seconds() == 60

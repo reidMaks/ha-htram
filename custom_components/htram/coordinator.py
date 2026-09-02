@@ -244,6 +244,15 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
 
                 await client.stop_notify(NOTIFY_UUID)
 
+                # Hold the link only when Bluetooth is the sole source. The
+                # device appears to suspend its telemetry while a Bluetooth
+                # session is open -- it has an explicit radio-mode command and
+                # treats the two as modes -- so with MQTT configured an idle
+                # open link would cost exactly the readings it is there to
+                # protect.
+                if self.mqtt_enabled:
+                    await self._cleanup_client()
+
                 # If we had a timeout on realtime data, our connection might be bad.
                 # Recycle the client to force a fresh connection next time.
                 if timeout_occurred:
