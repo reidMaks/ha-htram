@@ -85,13 +85,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: HtramConfigEntry) -> boo
     address = entry.unique_id
     assert address is not None
 
-    ble_device = bluetooth.async_ble_device_from_address(hass, address.upper(), connectable=True)
-    if not ble_device:
-        raise ConfigEntryNotReady(f"Could not find HTRAM device with address {address}")
+    mqtt_enabled = entry.options.get(CONF_MQTT_ENABLED, False)
 
-    coordinator = HTRAMDataUpdateCoordinator(hass, entry, ble_device)
-    coordinator.mqtt_enabled = entry.options.get(CONF_MQTT_ENABLED, False)
-    await coordinator.async_config_entry_first_refresh()
+    # Requiring a visible Bluetooth device here used to take the whole entry
+    # down -- every sensor, including the ones MQTT feeds. The monitor
+    # advertises only in short windows, so that happened routinely. With MQTT
+    # configured the readings arrive regardless; only the controls need the
+    # radio, and they report their own unavailability.
+    if not mqtt_enabled and not bluetooth.async_ble_device_from_address(
+        hass, address.upper(), connectable=True
+    ):
+        raise ConfigEntryNotReady(
+            f"{address} is not advertising. Press the button on the device, or "
+            f"configure MQTT so readings do not depend on Bluetooth"
+        )
+
+    coordinator = HTRAMDataUpdateCoordinator(hass, entry, address.upper())
+    coordinator.mqtt_enabled = mqtt_enabled
+    if mqtt_enabled:
+        # Must not raise: a failed Bluetooth poll is expected here.
+        await coordinator.async_refresh()
+    else:
+        await coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = coordinator
 

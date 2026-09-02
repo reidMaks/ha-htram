@@ -4,7 +4,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .coordinator import HTRAMDataUpdateCoordinator, HtramConfigEntry
-from .entity import HtramEntity
+from .entity import HtramBluetoothEntity
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -15,7 +15,7 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
     async_add_entities([HTRAMSyncTimeButton(coordinator)])
 
-class HTRAMSyncTimeButton(HtramEntity, ButtonEntity):
+class HTRAMSyncTimeButton(HtramBluetoothEntity, ButtonEntity):
     """Representation of HTRAM Time Sync Button."""
 
     def __init__(self, coordinator: HTRAMDataUpdateCoordinator) -> None:

@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .coordinator import HTRAMDataUpdateCoordinator, HtramConfigEntry
-from .entity import HtramEntity
+from .entity import HtramBluetoothEntity
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -18,7 +18,7 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
     async_add_entities([HTRAMChargingSensor(coordinator)])
 
-class HTRAMChargingSensor(HtramEntity, BinarySensorEntity):
+class HTRAMChargingSensor(HtramBluetoothEntity, BinarySensorEntity):
     """Representation of HTRAM Charging Status."""
 
     def __init__(self, coordinator: HTRAMDataUpdateCoordinator) -> None:

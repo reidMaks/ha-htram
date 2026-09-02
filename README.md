@@ -125,6 +125,12 @@ integration does not reconnect while the device is still advertising, the
 window closes and the button has to be pressed. This is why the MQTT path
 exists: telemetry survives a restart without any of that.
 
+**With MQTT configured, losing Bluetooth costs only the controls.** The
+readings keep arriving; the buzzer switch, thresholds, screen timer, unit
+selector, battery and charging report unavailable until the radio comes back.
+Without MQTT, Bluetooth is the only source and the integration waits for the
+device instead.
+
 ## Development
 
 ```bash

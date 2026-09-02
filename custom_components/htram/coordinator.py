@@ -41,7 +41,7 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         self,
         hass: HomeAssistant,
         config_entry: ConfigEntry,
-        ble_device: BLEDevice,
+        address: str,
     ) -> None:
         """Initialize."""
         # config_entry became required in HA 2026.8; omitting it logs a
@@ -53,10 +53,15 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
             name=DOMAIN,
             update_interval=timedelta(seconds=POLL_INTERVAL),
         )
-        self.ble_device = ble_device
-        self.address = ble_device.address
+        # The device is looked up on each poll rather than held from setup:
+        # it advertises only in short windows, so an object captured once goes
+        # stale, and requiring one at setup meant a missing radio took the
+        # whole entry down.
+        self.address = address
+        self.ble_device: BLEDevice | None = None
         self.data = {}
         self._client = None
+        self.ble_ok = False
 
         # Set by __init__.py from the config entry options. When telemetry is
         # arriving over MQTT the Bluetooth poll skips the realtime request,
@@ -111,6 +116,20 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         for key in MQTT_KEYS:
             self.data[key] = None
 
+    def _tolerate_ble_failure(self, reason: str):
+        """Decide what a failed Bluetooth poll means.
+
+        With MQTT supplying the readings, losing Bluetooth costs the controls
+        and the battery figure -- not the sensors. Raising UpdateFailed here
+        would mark the coordinator unsuccessful and take every entity down
+        with it, including the ones MQTT is still feeding.
+        """
+        self.ble_ok = False
+        if self.mqtt_is_fresh:
+            _LOGGER.debug("Bluetooth poll failed (%s); MQTT is still supplying data", reason)
+            return self.data
+        raise UpdateFailed(reason)
+
     async def _async_update_data(self):
         """Fetch data from the device."""
         self._expire_stale_mqtt()
@@ -119,6 +138,10 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
             ble_device = bluetooth.async_ble_device_from_address(self.hass, self.address, connectable=True)
             if ble_device:
                 self.ble_device = ble_device
+            if self.ble_device is None:
+                return self._tolerate_ble_failure(
+                    f"{self.address} is not advertising"
+                )
 
             # Use a larger timeout for the entire update cycle
             # asyncio.timeout is stdlib since 3.11; HA stopped shipping the
@@ -221,14 +244,15 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
                     _LOGGER.debug("Timeouts occurred, forcing client recycle")
                     await self._cleanup_client()
 
+            self.ble_ok = True
             return self.data
 
         except asyncio.TimeoutError:
             await self._cleanup_client()
-            raise UpdateFailed("Update timed out")
+            return self._tolerate_ble_failure("Update timed out")
         except BleakError as func_call_error:
             await self._cleanup_client()
-            raise UpdateFailed(f"Bluetooth error: {func_call_error}") from func_call_error
+            return self._tolerate_ble_failure(f"Bluetooth error: {func_call_error}")
         except Exception as e:
             await self._cleanup_client()
             raise UpdateFailed(f"Unexpected error: {repr(e)}") from e

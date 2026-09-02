@@ -5,7 +5,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .coordinator import HTRAMDataUpdateCoordinator, HtramConfigEntry
-from .entity import HtramEntity
+from .entity import HtramBluetoothEntity
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -19,7 +19,7 @@ async def async_setup_entry(
         HTRAMScreenOffSelect(coordinator),
     ])
 
-class HTRAMTempUnitSelect(HtramEntity, SelectEntity):
+class HTRAMTempUnitSelect(HtramBluetoothEntity, SelectEntity):
     """Representation of HTRAM Temperature Unit Select."""
 
     def __init__(self, coordinator: HTRAMDataUpdateCoordinator) -> None:
@@ -41,7 +41,7 @@ class HTRAMTempUnitSelect(HtramEntity, SelectEntity):
         is_c = option == "Celsius"
         await self.coordinator.async_set_temp_unit(is_c)
 
-class HTRAMScreenOffSelect(HtramEntity, SelectEntity):
+class HTRAMScreenOffSelect(HtramBluetoothEntity, SelectEntity):
     """Representation of HTRAM Screen Off Select."""
 
     def __init__(self, coordinator: HTRAMDataUpdateCoordinator) -> None:

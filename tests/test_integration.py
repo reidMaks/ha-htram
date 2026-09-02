@@ -27,6 +27,9 @@ TOPIC = f"C/{SERIAL}"
 # A payload captured from the device: 650 ppm, 23 C, 58 %.
 PAYLOAD = bytes.fromhex("444300020001c818976a5106000c000001042d108a0200173a150c")
 
+# Flipped by the tests that need Bluetooth to be gone.
+ble_reachable = True
+
 BLE_READING = {
     "co2": 500,
     "temperature": 21,
@@ -56,6 +59,15 @@ def ble_device() -> MagicMock:
     return device
 
 
+async def _fake_poll(coordinator):
+    """Stand in for a Bluetooth poll that reached the device."""
+    coordinator.ble_ok = ble_reachable
+    if not ble_reachable:
+        return coordinator._tolerate_ble_failure("no radio in tests")
+    coordinator.data.update(BLE_READING)
+    return coordinator.data
+
+
 async def setup_entry(
     hass: HomeAssistant, ble_device: MagicMock, options: dict | None = None
 ) -> MockConfigEntry:
@@ -76,7 +88,8 @@ async def setup_entry(
         ),
         patch(
             "custom_components.htram.coordinator.HTRAMDataUpdateCoordinator._async_update_data",
-            AsyncMock(return_value=dict(BLE_READING)),
+            autospec=True,
+            side_effect=_fake_poll,
         ),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
@@ -231,3 +244,40 @@ async def test_charging_binary_sensor_exists(
     )
     assert entity_id is not None
     assert hass.states.get(entity_id).state == "off"
+
+
+async def test_readings_survive_losing_bluetooth(
+    hass: HomeAssistant, custom_integration, ble_device, mqtt_mock
+):
+    """Losing the radio must not take the MQTT-fed sensors down.
+
+    The monitor advertises in short windows, so Bluetooth is gone most of the
+    time. Requiring it took the whole config entry down -- all 12 entities --
+    even when telemetry was arriving. Control goes unavailable; readings stay.
+    """
+    global ble_reachable
+    await setup_entry(
+        hass, ble_device, options={CONF_MQTT_ENABLED: True, CONF_SERIAL: SERIAL}
+    )
+    async_fire_mqtt_message(hass, TOPIC, PAYLOAD)
+    await hass.async_block_till_done()
+    assert state_of(hass, "co2") == "650"
+
+    ble_reachable = False
+    try:
+        entry = hass.config_entries.async_entries(DOMAIN)[0]
+        await entry.runtime_data.async_refresh()
+        await hass.async_block_till_done()
+
+        # The entry stays loaded and telemetry keeps feeding the sensors.
+        assert entry.state.name == "LOADED"
+        assert state_of(hass, "co2") == "650"
+        assert state_of(hass, "temperature") == "23"
+
+        # What genuinely needs the radio says so.
+        assert state_of(hass, "battery") == "unavailable"
+        registry = er.async_get(hass)
+        switch = registry.async_get_entity_id("switch", DOMAIN, f"{ADDRESS}_mute")
+        assert hass.states.get(switch).state == "unavailable"
+    finally:
+        ble_reachable = True

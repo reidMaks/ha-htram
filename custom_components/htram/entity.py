@@ -33,3 +33,18 @@ class HtramEntity(CoordinatorEntity[HTRAMDataUpdateCoordinator]):
             manufacturer="Honeywell",
             model="HTRAM-RM",
         )
+
+
+class HtramBluetoothEntity(HtramEntity):
+    """For entities only Bluetooth can supply or drive.
+
+    The controls, the battery and the charging flag have no MQTT equivalent:
+    the telemetry payload carries readings and nothing else. When the radio is
+    gone these report unavailable on their own, while the CO2, temperature and
+    humidity sensors carry on from MQTT.
+    """
+
+    @property
+    def available(self) -> bool:
+        """Whether Bluetooth reached the device on the last attempt."""
+        return super().available and self.coordinator.ble_ok

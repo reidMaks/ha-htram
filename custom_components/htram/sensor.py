@@ -13,6 +13,7 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from .const import MQTT_KEYS
 from .coordinator import HTRAMDataUpdateCoordinator, HtramConfigEntry
 from .entity import HtramEntity
 
@@ -69,11 +70,18 @@ class HTRAMSensor(HtramEntity, SensorEntity):
     def available(self) -> bool:
         """Whether the reading is current.
 
-        A missing key means the source stopped supplying it -- MQTT went quiet,
-        or the Bluetooth poll failed. Showing the last value indefinitely would
-        draw a flat line through an outage.
+        A missing value means the source stopped supplying it -- MQTT went
+        quiet, or the Bluetooth poll failed. Showing the last one indefinitely
+        would draw a flat line through an outage.
+
+        Battery has no MQTT equivalent, so it also needs the radio; the other
+        three do not, and keep going from telemetry when Bluetooth is gone.
         """
-        return super().available and self.coordinator.data.get(self._key) is not None
+        if self.coordinator.data.get(self._key) is None:
+            return False
+        if self._key not in MQTT_KEYS and not self.coordinator.ble_ok:
+            return False
+        return super().available
 
 
 class HTRAMSourceSensor(HtramEntity, SensorEntity):

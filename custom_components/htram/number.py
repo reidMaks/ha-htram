@@ -5,7 +5,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .coordinator import HTRAMDataUpdateCoordinator, HtramConfigEntry
-from .entity import HtramEntity
+from .entity import HtramBluetoothEntity
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -21,7 +21,7 @@ async def async_setup_entry(
 
 
 
-class HTRAMAlarmLowNumber(HtramEntity, NumberEntity):
+class HTRAMAlarmLowNumber(HtramBluetoothEntity, NumberEntity):
     """Representation of HTRAM CO2 Alarm Low Threshold."""
 
     def __init__(self, coordinator: HTRAMDataUpdateCoordinator) -> None:
@@ -41,7 +41,7 @@ class HTRAMAlarmLowNumber(HtramEntity, NumberEntity):
     async def async_set_native_value(self, value: float) -> None:
         await self.coordinator.async_set_alarm_thresholds(low=int(value))
 
-class HTRAMAlarmHighNumber(HtramEntity, NumberEntity):
+class HTRAMAlarmHighNumber(HtramBluetoothEntity, NumberEntity):
     """Representation of HTRAM CO2 Alarm High Threshold."""
 
     def __init__(self, coordinator: HTRAMDataUpdateCoordinator) -> None:
