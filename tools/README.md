@@ -979,12 +979,24 @@ default address is `FF FF FF FF`, and **no code in the app calls it** -- it is
 a leftover in the SDK, which is exactly the kind of thing that tends to be
 least guarded.
 
-If the address is a raw memory address rather than an index into the 90-day
-measurement log, this reads the GD32's flash over Bluetooth, and the firmware
-can be dumped without SWD. That firmware is the only remaining source for the
-downlink format: the vendor cloud is gone, the portal survives only as a
-JavaScript shell in the Wayback Machine, and the app never speaks to the
-device except during provisioning.
+**The odds of this dumping firmware are poor, and the SDK says why.** The
+callback interface for this command, `IGetDataLog`, returns
+`List<HistoryBean>` -- records with `time`, `temp`, `humidity`, `battery`,
+`maxReading`, `minReading`, `staus` and `pachageNum`. So `0x2093` is meant to
+read the 90-day measurement history, and the address is almost certainly an
+index into that log rather than a memory address. Nothing about it looks like
+a debug read primitive.
+
+What it *is* worth is the history itself. Nothing else exposes the stored
+90 days, and reading it would let the integration backfill data from before it
+was installed, or after a gap. `HistoryBean` also carries a `hcho` field
+(formaldehyde) that this model has no sensor for -- the SDK is shared across a
+product family.
+
+Trying `0x08000000` costs nothing while the tool is connected anyway, so it is
+still worth a shot: if the address turns out to be unbounded, the GD32 flash
+comes out over Bluetooth and with it the downlink format, which is otherwise
+unrecoverable. But expect the log.
 
 Frames to send with `htram_wifi.py raw <MAC> <hex>`:
 
@@ -1003,6 +1015,20 @@ unbounded and the dump is on.
 
 The device must be within Bluetooth range of the machine running the tool.
 Through a distant ESPHome proxy at -96 dBm it will not connect.
+
+### The BLE stack is not custom
+
+`com.hon.wingletsdk.ble` is a repackaging of the open-source Android
+BluetoothKit: `BluetoothClient`, `BluetoothClientImpl`, `BluetoothService`,
+`BluetoothContext`, `IResponse`, `Code`, `RuntimeChecker` and the
+`search`/`connect`/`beacon`/`channel.packet`/`utils.proxy` layout are that
+library's, class for class. GreenDAO sits underneath for storage.
+
+This is worth knowing mostly for what it rules out: there is no vendor
+transport layer to reverse, no hidden framing below the `7B 41` frames, and
+the chunked-transfer machinery used for firmware pushes is public code. The
+only proprietary part of the Bluetooth side is the frame format documented
+above.
 
 ## 9. Status summary
 
