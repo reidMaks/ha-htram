@@ -115,6 +115,11 @@ nobody repeats it.
 
 **Battery is reported in bars**, 0 to 4, and shown as 0/25/50/75/100 %.
 
+**The first couple of minutes after a power-up are discarded.** Until the NDIR
+sensor warms up the device reports CO2 65534, temperature 0x81 and humidity
+0xFE -- which decode to 65534 ppm, -127 C and 254 % if taken at face value. All
+three are dropped and the sensors read unavailable until real numbers arrive.
+
 **Restarting Home Assistant does not restore Bluetooth by itself.** If the
 integration does not reconnect while the device is still advertising, the
 window closes and the button has to be pressed. This is why the MQTT path

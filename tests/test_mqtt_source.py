@@ -203,3 +203,47 @@ def test_provision_step_reuses_stored_keys():
     assert seen["aes_key"] == stored[CONF_AES_KEY]
     assert seen["aes_iv"] == stored[CONF_AES_IV]
     assert seen["mqtt_server"] == "tcp://mqtt.example"
+
+
+def test_warmup_sentinels_are_dropped_on_both_paths():
+    """The device reports nonsense until the NDIR sensor warms up.
+
+    Five of the captured payloads carry CO2 0xFFFE, temperature 0x81 and
+    humidity 0xFE together, for the first couple of minutes after a boot. The
+    MQTT path discarded them; the Bluetooth path parsed the frame itself and
+    did not, so the same device showed 65534 ppm and -127 C over Bluetooth
+    while showing nothing over MQTT.
+    """
+    coord = object.__new__(Coordinator)
+    coord.data = {}
+
+    warmup = protocol.build_frame(
+        b"\x41\x44", bytes([0x02, 0xFF, 0xFE, 0x81, 0xFE, 4, 1])
+    )
+    coord._parse_realtime(warmup)
+
+    assert coord.data["co2"] is None
+    assert coord.data["temperature"] is None
+    assert coord.data["humidity"] is None
+    # Battery and charging are not sensor readings and stay valid.
+    assert coord.data["battery"] == 100
+    assert coord.data["charging"] is True
+
+
+def test_real_bluetooth_reading_survives():
+    coord = object.__new__(Coordinator)
+    coord.data = {}
+    frame = protocol.build_frame(b"\x41\x44", bytes([0x02, 0x02, 0x26, 23, 58, 4, 0]))
+    coord._parse_realtime(frame)
+    assert coord.data["co2"] == 550
+    assert coord.data["temperature"] == 23
+
+
+def test_mute_is_the_inverse_of_the_buzzer():
+    """The switch is a mute switch, so it is on when the buzzer is off."""
+    coord = object.__new__(Coordinator)
+    coord.data = {}
+    coord._parse_sound(protocol.build_frame(b"\x27\x23", bytes([0x01, 0x00, 0x00, 0x00])))
+    assert coord.data["mute"] is True
+    coord._parse_sound(protocol.build_frame(b"\x27\x23", bytes([0x01, 0x00, 0x00, 0x01])))
+    assert coord.data["mute"] is False
