@@ -242,50 +242,43 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
                 pass
             self._client = None
 
-    def _parse_realtime(self, data: bytearray):
-        # Validation
-        if len(data) < 13:
-            _LOGGER.warning(f"Realtime data too short: {len(data)}")
+    def _parse_realtime(self, frame: bytes) -> None:
+        """Store a realtime answer.
+
+        Parsing lives in protocol, which discards the warm-up sentinels the
+        NDIR sensor emits for the first couple of minutes after a boot. This
+        method used to parse the frame itself and had no such check, so a
+        freshly powered device reported 65534 ppm, -127 C and 254 % over
+        Bluetooth while the MQTT path correctly showed nothing.
+        """
+        reading = protocol.parse_realtime(frame)
+        if reading is None:
+            _LOGGER.warning("Realtime frame too short: %d bytes", len(frame))
             return
 
-        co2 = int.from_bytes(data[7:9], byteorder='big')
-        temp = data[9]
-        if temp > 128:
-            temp = temp - 256
-        
-        hum = data[10]
-        batt_level = data[11]
-        batt = batt_level * 25
-        if batt > 100:
-            batt = 100
+        self.data["co2"] = reading.co2
+        self.data["temperature"] = reading.temperature
+        self.data["humidity"] = reading.humidity
+        self.data["battery"] = reading.battery
+        self.data["charging"] = reading.charging
 
-        charging = data[12]
+    def _parse_sound(self, frame: bytes) -> None:
+        """Store the buzzer state. The switch is a mute switch, so it inverts."""
+        enabled = protocol.parse_sound(frame)
+        if enabled is None:
+            _LOGGER.warning("Sound frame too short: %d bytes", len(frame))
+            return
+        self.data["mute"] = not enabled
 
-        self.data["co2"] = co2
-        self.data["temperature"] = temp
-        self.data["humidity"] = hum
-        self.data["battery"] = batt
-        self.data["charging"] = charging == 1
-
-    def _parse_sound(self, data: bytearray):
-        if len(data) < 10:
-             _LOGGER.warning(f"Sound data too short: {len(data)}")
-             return
-        is_off = data[9] == 0 
-        self.data["mute"] = is_off 
-
-    def _parse_settings(self, data: bytearray):
-        if len(data) < 13:
-             _LOGGER.warning(f"Settings data too short: {len(data)}")
-             return
-
-        low = int.from_bytes(data[7:9], byteorder='big')
-        high = int.from_bytes(data[9:11], byteorder='big')
-        screen_off = int.from_bytes(data[11:13], byteorder='big')
-
-        self.data["alarm_low"] = low
-        self.data["alarm_high"] = high
-        self.data["screen_off"] = screen_off 
+    def _parse_settings(self, frame: bytes) -> None:
+        """Store the alarm thresholds and the screen-off timer."""
+        settings = protocol.parse_settings(frame)
+        if settings is None:
+            _LOGGER.warning("Settings frame too short: %d bytes", len(frame))
+            return
+        self.data["alarm_low"] = settings.alarm_low
+        self.data["alarm_high"] = settings.alarm_high
+        self.data["screen_off"] = settings.screen_off
 
     async def async_set_mute(self, mute: bool) -> None:
         """Turn the alarm buzzer off or on."""
