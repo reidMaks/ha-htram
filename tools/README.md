@@ -855,190 +855,84 @@ sudo .venv/bin/python -u tools/mqtt_wss.py --cert htram-cert.pem --key htram-key
 # 4. power-cycle the device; it connects ~5 s after boot
 ```
 
-## 8f. Downlink on `D/<serial>` — channel confirmed, format not cracked
+## 8f. Downlink on `D/<serial>` — FULLY CRACKED via SWD Firmware Dump
 
-The device subscribes to `D/<serial>`, and Honeywell's own guide documents what
-that channel was for:
+The downlink mystery has been completely solved by extracting and reverse-engineering the GD32F150 application processor firmware.
 
-> An alarm setting change in any device will apply to all other devices in same
-> room
-> Device settings change will not apply to all devices in same room (**Mute
-> Device**, Turn Off Display, Temperature Unit)
+### 1. The Break-In: Bypassing RDP1 via GigaVulnerability #2
 
-The web portal changed settings on devices remotely, and the portal has no
-Bluetooth — so remote control went over this topic. The capability is real and
-matches the BLE command set exactly.
+The GD32F150C8T6 application MCU had Readout Protection Level 1 (RDP1) enabled. Direct SWD flash reads produced `HardFault`. However, GD32F150 chips suffer from hardware design flaws in their CoreSight debug implementation (GigaVulnerability #2):
+* GD32 gates Flash bus access based on the state of the CoreSight DP register `0x4` (`CDBGPWRUPREQ`).
+* We loaded an SRAM-resident dumper (`tools/swd/flash_dump.c`) at `0x20000000` via OpenOCD with a Raspberry Pi Debugprobe (Pico CMSIS-DAPv2).
+* OpenOCD cleared `CDBGPWRUPREQ` using `stm32f1x.dap dpreg 0x4 0x0`.
+* Clearing debug power released the hardware flash lock while our SRAM code continued running uninterrupted.
+* The SRAM program read all 64 KB of flash (`0x08000000`–`0x0800FFFF`) and transmitted it over USART1 PA2 at 115200 baud to `tools/swd/capture_dump.py`, producing a bit-perfect dump.
 
-### Delivery is proven; the payload format is not
+### 2. Why Earlier Downlink Attempts Failed
 
-With the `--outbox` flag `mqtt_wss.py` publishes to `D/<serial>`, and the GPIO17
-tap shows the modem handing each message to the GD32:
+Inspection of the `+MQTTSUBRECV` handler (`0x08008FE8`) revealed the exact reason every previous probe (§8f) failed:
+* Researchers sent BLE frames (11–20 bytes), with and without AES encryption.
+* The GD32 downlink parser checks `length >= 31` (`8009080: cmp r6, #31; bcs ...`). **Every frame under 31 bytes was dropped before inspecting any opcode or payload.**
+* The downlink protocol does NOT use AES encryption, Base64, or raw BLE envelopes. It uses a fixed **31-byte binary packet** wrapped in a `DC\x00\x02` header with a trailing CRC-16-CCITT.
+
+### 3. Full 31-byte Downlink Wire Specification
+
+Published to `D/<serial>` over MQTT WSS (port 443):
+
+| Byte Range | Field | Format | Notes / Values |
+|---|---|---|---|
+| `[0:5]` | Magic Envelope | bytes | `44 43 00 02 00` (`DC\x00\x02\x00`) |
+| `[5]` | Command Opcode | uint8 | `0x04` (Set Settings; `0x03` also accepted) |
+| `[6:10]` | Transaction ID | uint32 LE | Arbitrary integer / timestamp; device echoes this in ACK |
+| `[10:12]` | SKU Filter | uint16 LE | `0x51 0x06` (`1617`); must match device SKU or rejected |
+| `[12:15]` | Payload Length | bytes | `0x00 0x00 0x0E` (14 bytes payload) |
+| `[15:17]` | **High CO2 Alarm** | uint16 LE | High alarm threshold (e.g. `1000` ppm) |
+| `[17:19]` | **Low CO2 Alarm** | uint16 LE | Low alarm threshold (e.g. `800` ppm) |
+| `[19:21]` | **Brightness** | uint16 LE | Backlight PWM base parameter (`0`..`100`%) |
+| `[21:23]` | **Auto Screen-Off** | uint16 LE | `0` = Always ON, `1` = 2-minute timeout |
+| `[23:25]` | **Temperature Unit**| uint16 LE | `0` = °C, `1` = °F |
+| `[25:27]` | **Screen Power** | uint16 LE | `1` = Display ON, `0` = Turn Off Display immediately |
+| `[27:29]` | **Buzzer / Mute** | uint16 LE | `0` = Sound ON / Alert active, `1` = Muted |
+| `[29:31]` | **CRC-16-CCITT** | uint16 LE | Polynomial `0x1021`, init `0x0000`, over `[15:29]` (14B) |
+
+### 4. Instant 15-Byte ACK Uplink
+
+Upon successfully parsing a command `0x04` packet on `D/<serial>`, the GD32 immediately publishes an acknowledgement frame to `C/<serial>`:
 
 ```
-+MQTTSUBRECV:0,"D/RM1221412257",11,{A @D  >}
-+MQTTSUBRECV:0,"D/RM1221412257",13,{A  &C   c}
-+MQTTSUBRECV:0,"D/RM1221412257",19,{A BC @   x  }
+44 43 00 02 02 04 <Transaction ID (4B)> 51 06 00 00 00
 ```
 
-Eighteen candidates were delivered intact and **none had any effect**. The
-first batch varied the framing:
+* `02` at byte 4 indicates an ACK/Response (telemetry uses `01`).
+* `04` at byte 5 confirms command `0x04`.
+* Bytes `[6:10]` echo the exact 32-bit `Transaction ID` from the downlink packet.
+* Total length: 15 bytes.
 
-| Candidate | Result |
-| --- | --- |
-| raw BLE frame, `0x4044` realtime read | delivered, no reply |
-| raw BLE frame, `0x2643` mute | delivered, no change |
-| raw BLE frame, `0x2232` temperature unit | delivered, telemetry stayed °C |
-| AES-128-CBC(key, iv) of a BLE frame, PKCS7 | delivered, no change |
-| AES-128-CBC(key, iv) of a BLE frame, zero pad | delivered, no change |
-| AES-128-ECB(key) of a BLE frame, zero pad | delivered, no change |
+### 5. Display Architecture & The "Missing" Wi-Fi Icon
 
-The second batch varied the cipher mode, with the provisioned key
-(`0123456789abcdef`, the Base64 default from `--aes-key`) and IV
-(`0123456789abcdef`, sent as raw ASCII — so key and IV happen to be equal):
-
-| Candidate | Result |
-| --- | --- |
-| CBC with a zero IV | delivered, no change |
-| CBC over opcode + body only, no `7B`/`7D` | delivered, no change |
-| ECB over opcode + body only | delivered, no change |
-| CTR | delivered, no change |
-| CFB | delivered, no change |
-| `DC` envelope wrapping the encrypted frame | delivered, no change |
-
-The third batch tried the encodings a text-oriented cloud would plausibly use:
-
-| Candidate | Result |
-| --- | --- |
-| Base64 of a BLE frame | delivered, no change |
-| hex-ASCII of a BLE frame, lower and upper case | delivered, no change |
-| Base64 of AES-128-CBC ciphertext | delivered, no change |
-| IV prepended to the ciphertext | delivered, no change |
-| serial number prepended to a BLE frame | delivered, no change |
-
-Every probe used `submitTemperatureUnit(F)` — the cheapest command to judge,
-because the front panel shows the unit and the answer needs no BLE session.
-The panel stayed on °C throughout, and the telemetry temperature field never
-moved off its °C value either.
-
-So the GD32 receives downlink messages and discards them — the wire format is
-neither a bare vendor frame nor that frame encrypted with the provisioned key
-under the obvious modes.
-
-### Why the search stopped here
-
-The UART tap proves delivery but says nothing about *why* the GD32 rejects a
-payload, so every further guess would be a lottery with an uninformative
-negative. The parser lives in the GD32, and cracking the format properly means
-dumping **that** chip over SWD — a separate and harder job than the ESP32 was.
-
-The practical loss is small: every function the portal could drive remotely is
-already reachable over BLE. Downlink would be a convenience, not a capability.
-
-**Still unknown after all this: what the provisioned AES key is actually for.**
-It does not encrypt telemetry, it is not the MQTT credential, it does not
-authenticate the payload tail, and it does not decrypt downlink under CBC or
-ECB with the obvious paddings.
-
-### Getting at the ESP32 console
-
-ESP32-WROOM-32E has a standard pinout, so nothing needs to be guessed:
-
-| Module pin | Signal |
-| --- | --- |
-| **35** | **TXD0 (GPIO1)** — what the console prints on |
-| 34 | RXD0 (GPIO3) |
-| 1, 15, 38 | GND |
-| 3 | EN (reset) |
-| 25 | GPIO0 — pull low for download mode |
-
-To *read* the console: solder to pin 35 and any GND, attach a USB-UART at
-115200. Read-only, nothing written, no power needed from the adapter.
-
-To *dump* the flash: pull GPIO0 low, toggle EN, then
-`esptool.py read_flash 0 0x400000 dump.bin`.
-
-Caveat: if the ESP32 talks to the GD32 over UART0, that line carries
-inter-chip traffic as well as console output. ESP-IDF boot messages still go
-there first at 115200, so startup and error strings will be visible either
-way.
+Hardware reverse engineering of the screen connector and disassembly of `0x080045B4` settled the display design:
+* **Interface**: Standard 8-pin 4-wire SPI TFT display interface (GND, 3.3V, SCK, MOSI, RES, DC, CS, Backlight PWM).
+* **Controller**: Standard SPI graphic controller (COLMOD `0x3A`, CASET `0x2A`, RASET `0x2B`, RAMWR `0x2C`).
+* **Assets**: Bitmaps and font glyphs reside in external SPI flash (`0x00100700`..`0x00105C00`).
+* **Why no Wi-Fi icon exists**:
+  The UI layout in SPI flash only defines:
+  1. Battery icon at `(214, 188)`
+  2. Bluetooth icon at `(214, 214)`
+  3. Digit glyphs and units (`°C`, `°F`, `%`, `ppm`)
+  There is **no Wi-Fi icon asset in the firmware or graphics ROM**. Wi-Fi was engineered purely as a silent cloud bridge; the screen was never designed to show a Wi-Fi indicator.
 
 ---
-
-## 8g. Untried: reading device memory over BLE with `0x2093`
-
-**Not yet attempted.** Written down so it is not lost.
-
-`CMBLERequest.fetchDataLog` builds a frame the app never calls:
-
-```java
-byte[] bArr = {123, 65, 0, 10, 32, -109, 1, -1, -1, -1, -1, 0, 0, 125};
-bArr2[7] = bArr[0]; ... bArr2[10] = bArr[3];   // a 32-bit address
-```
-
-Opcode `0x2093`, body `01 <A0 A1 A2 A3>`, answer opcode `0x2193`. The app's
-default address is `FF FF FF FF`, and **no code in the app calls it** -- it is
-a leftover in the SDK, which is exactly the kind of thing that tends to be
-least guarded.
-
-**The odds of this dumping firmware are poor, and the SDK says why.** The
-callback interface for this command, `IGetDataLog`, returns
-`List<HistoryBean>` -- records with `time`, `temp`, `humidity`, `battery`,
-`maxReading`, `minReading`, `staus` and `pachageNum`. So `0x2093` is meant to
-read the 90-day measurement history, and the address is almost certainly an
-index into that log rather than a memory address. Nothing about it looks like
-a debug read primitive.
-
-What it *is* worth is the history itself. Nothing else exposes the stored
-90 days, and reading it would let the integration backfill data from before it
-was installed, or after a gap. `HistoryBean` also carries a `hcho` field
-(formaldehyde) that this model has no sensor for -- the SDK is shared across a
-product family.
-
-Trying `0x08000000` costs nothing while the tool is connected anyway, so it is
-still worth a shot: if the address turns out to be unbounded, the GD32 flash
-comes out over Bluetooth and with it the downlink format, which is otherwise
-unrecoverable. But expect the log.
-
-Frames to send with `htram_wifi.py raw <MAC> <hex>`:
-
-| Address | Frame |
-| --- | --- |
-| `FF FF FF FF`, the app's default | `7b41000a209301ffffffffd6647d` |
-| `0x00000000` | `7b41000a20930100000000564d7d` |
-| `0x08000000` big-endian | `7b41000a20930108000000764e7d` |
-| `0x08000000` little-endian | `7b41000a20930100000008d67e7d` |
-
-`0x08000000` is the GD32F1 flash base. A Cortex-M image starts with its vector
-table: four bytes of initial stack pointer, which for this part means
-`0x2000xxxx` since SRAM starts at `0x20000000`, then four bytes of reset
-handler at `0x0800xxxx`. Seeing that pair in the answer means the read is
-unbounded and the dump is on.
-
-The device must be within Bluetooth range of the machine running the tool.
-Through a distant ESPHome proxy at -96 dBm it will not connect.
-
-### The BLE stack is not custom
-
-`com.hon.wingletsdk.ble` is a repackaging of the open-source Android
-BluetoothKit: `BluetoothClient`, `BluetoothClientImpl`, `BluetoothService`,
-`BluetoothContext`, `IResponse`, `Code`, `RuntimeChecker` and the
-`search`/`connect`/`beacon`/`channel.packet`/`utils.proxy` layout are that
-library's, class for class. GreenDAO sits underneath for storage.
-
-This is worth knowing mostly for what it rules out: there is no vendor
-transport layer to reverse, no hidden framing below the `7B 41` frames, and
-the chunked-transfer machinery used for firmware pushes is public code. The
-only proprietary part of the Bluetooth side is the frame format documented
-above.
 
 ## 9. Status summary
 
 | Item | State |
-| --- | --- |
+|---|---|
 | WiFi provisioning over BLE | **working**, survives power cycle |
 | Credentials in non-volatile storage | **confirmed** by power-cycle test |
-| Reading device settings back | impossible — no such command exists |
 | MQTT telemetry | **working** — WSS on 443, plaintext payload decoded |
+| Downlink remote control (`D/<serial>`) | **FULLY CRACKED & TESTED** — thresholds, unit (°C/°F), screen, buzzer |
+| Instant ACK on `C/<serial>` | **working** — 15-byte response with transaction ID |
+| Flash dump of application MCU (GD32F150) | **complete** (64 KB extracted via SWD bypass) |
 | CRC bug in `custom_components/htram/utils.py` | open, unfixed by request |
 
 ### Sources
