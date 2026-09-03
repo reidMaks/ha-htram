@@ -31,6 +31,10 @@ Thumbs.db
 # a 4 MB flash image, the broker's self-signed cert and its PRIVATE KEY,
 # raw UART/MQTT capture logs, and the downlink publish queue.
 esp32-dump.bin
+gd32_flash.bin
+tools/swd/*.bin
+tools/swd/*.elf
+*.pdf
 *.pem
 *.log
 outbox.txt
