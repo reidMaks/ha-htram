@@ -49,6 +49,9 @@
     "binary_sensor": {
       "charging": {
         "name": "Заряджання"
+      },
+      "co2_alarm": {
+        "name": "Тривога CO2"
       }
     },
     "switch": {

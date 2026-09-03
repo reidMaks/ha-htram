@@ -802,8 +802,9 @@ on hardware:
   On battery / charging it reports real Li-ion single-cell voltage: `4149` -> 4.149 V,
   `4148` -> 4.148 V. (During the first minute of cold-boot sensor calibration it
   briefly outputs settling residuals before switching to the battery ADC).
-* `[22]` — **CO2 alarm flag**: `0x01` when CO2 reaches or exceeds the alarm threshold
-  (>= 800 ppm), `0x00` during normal air quality.
+* `[22]` — **CO2 alarm / risk level**: 3-level scale matching Honeywell transmission risk:
+  `0x00` = normal / low risk (< 800 ppm), `0x01` = medium risk alert (800–1200 ppm),
+  `0x02` = high risk alarm (> 1200 ppm).
 
 ### The tail is a CRC — solved
 
@@ -830,7 +831,7 @@ So the payload is 100% accounted for:
 tt tt tt tt        timestamp, little-endian, UTC      <- outside the CRC
 51 06 00 0c 00 00  SKU 1617, length 12, flags 00 00   <- outside the CRC
 CC BB vv vv        charging (1/0), battery bars (0-4), battery voltage mV LE
-cc cc  AA  TT  HH  CO2 ppm LE, alarm flag (1/0), temp C, humidity %
+cc cc  AA  TT  HH  CO2 ppm LE, alarm/risk level (0/1/2), temp C, humidity %
 kk kk              CRC-16/0x8005 of [16:25], little-endian
 ```
 

@@ -381,6 +381,7 @@ class Telemetry:
     battery: int
     battery_voltage: float | None
     alarm: bool
+    alarm_level: int = 0
 
 
 def decode_telemetry(payload: bytes) -> Telemetry | None:
@@ -398,7 +399,7 @@ def decode_telemetry(payload: bytes) -> Telemetry | None:
         [17]    battery level in bars (0..4)
         [18:20] battery voltage in mV, uint16 little-endian
         [20:22] CO2 ppm, little-endian
-        [22]    CO2 alarm flag (1 = threshold exceeded, 0 = normal)
+        [22]    CO2 alarm / risk level (0 = low/normal, 1 = medium alert, 2 = high alarm)
         [23]    temperature, degrees C, signed
         [24]    humidity, percent
         [25:27] CRC-16 over [16:25], little-endian
@@ -415,7 +416,8 @@ def decode_telemetry(payload: bytes) -> Telemetry | None:
     battery = min(payload[17] * 25, 100)
     raw_mv = int.from_bytes(payload[18:20], "little")
     voltage = round(raw_mv / 1000.0, 3) if 2500 <= raw_mv <= 4500 else None
-    alarm = payload[22] == 1
+    alarm_level = payload[22]
+    alarm = alarm_level != 0
 
     return Telemetry(
         timestamp=int.from_bytes(payload[6:10], "little"),
@@ -426,4 +428,5 @@ def decode_telemetry(payload: bytes) -> Telemetry | None:
         battery=battery,
         battery_voltage=voltage,
         alarm=alarm,
+        alarm_level=alarm_level,
     )

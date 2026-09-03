@@ -42,7 +42,7 @@ CONF_AES_IV = "aes_iv"
 MQTT_STALE_AFTER = 300
 
 # Keys the MQTT payload carries. Everything else stays on Bluetooth.
-MQTT_KEYS = ("co2", "temperature", "humidity", "battery", "charging")
+MQTT_KEYS = ("co2", "temperature", "humidity", "battery", "charging", "co2_alarm", "alarm_level")
 
 # Built once at import: these have no arguments, so the frames never vary.
 # Commands that take a value are built at the call site from protocol.

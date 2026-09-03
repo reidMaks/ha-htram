@@ -143,6 +143,7 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         if reading.battery_voltage is not None:
             self.data["battery_voltage"] = reading.battery_voltage
         self.data["co2_alarm"] = reading.alarm
+        self.data["alarm_level"] = reading.alarm_level
         self.data["last_telemetry"] = reading.timestamp
         self.async_set_updated_data(self.data)
 
@@ -353,6 +354,18 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         self.data["humidity"] = reading.humidity
         self.data["battery"] = reading.battery
         self.data["charging"] = reading.charging
+        if reading.co2 is not None:
+            low = self.data.get("alarm_low")
+            high = self.data.get("alarm_high")
+            if low is not None and high is not None:
+                if reading.co2 >= high:
+                    level = 2
+                elif reading.co2 >= low:
+                    level = 1
+                else:
+                    level = 0
+                self.data["alarm_level"] = level
+                self.data["co2_alarm"] = level > 0
 
     def _parse_sound(self, frame: bytes) -> None:
         """Store the buzzer state. The switch is a mute switch, so it inverts."""

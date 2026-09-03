@@ -36,6 +36,8 @@ BLE_READING = {
     "humidity": 55,
     "battery": 100,
     "charging": False,
+    "co2_alarm": False,
+    "alarm_level": 0,
     "mute": False,
 }
 
@@ -245,6 +247,12 @@ async def test_charging_binary_sensor_exists(
     assert entity_id is not None
     assert hass.states.get(entity_id).state == "off"
 
+    alarm_id = registry.async_get_entity_id(
+        "binary_sensor", DOMAIN, f"{ADDRESS}_co2_alarm"
+    )
+    assert alarm_id is not None
+    assert hass.states.get(alarm_id).state == "off"
+
 
 async def test_readings_survive_losing_bluetooth(
     hass: HomeAssistant, custom_integration, ble_device, mqtt_mock
@@ -279,6 +287,10 @@ async def test_readings_survive_losing_bluetooth(
             "binary_sensor", DOMAIN, f"{ADDRESS}_charging"
         )
         assert hass.states.get(charging).state == "on"
+        co2_alarm = registry.async_get_entity_id(
+            "binary_sensor", DOMAIN, f"{ADDRESS}_co2_alarm"
+        )
+        assert hass.states.get(co2_alarm).state == "off"
 
         # What genuinely needs the radio (controls) says so.
         switch = registry.async_get_entity_id("switch", DOMAIN, f"{ADDRESS}_mute")

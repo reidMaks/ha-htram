@@ -49,6 +49,9 @@
     "binary_sensor": {
       "charging": {
         "name": "Charging"
+      },
+      "co2_alarm": {
+        "name": "CO2 alarm"
       }
     },
     "switch": {

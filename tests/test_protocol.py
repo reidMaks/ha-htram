@@ -239,8 +239,17 @@ def test_decode_telemetry_battery_discharging_and_alarm():
     )
     assert alarm_reading.co2 == 800
     assert alarm_reading.alarm is True
+    assert alarm_reading.alarm_level == 1
     assert alarm_reading.charging is True
     assert alarm_reading.battery_voltage == 4.164
+
+    # High alarm frame (CO2 = 1300 ppm, byte 22 = 2)
+    high_alarm = p.decode_telemetry(
+        bytes.fromhex("4443000200013a34996a5106000c0000010427101405021932fef7")
+    )
+    assert high_alarm.co2 == 1300
+    assert high_alarm.alarm is True
+    assert high_alarm.alarm_level == 2
 
 
 def test_decode_telemetry_rejects_corruption():

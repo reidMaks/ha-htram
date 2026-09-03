@@ -54,7 +54,7 @@ HUM_INVALID = 0xFE
 
 class Reading:
     __slots__ = ("timestamp", "co2", "temperature", "humidity", "charging",
-                 "battery", "voltage", "alarm", "mid", "tail", "raw", "crc_ok")
+                 "battery", "voltage", "alarm", "alarm_level", "mid", "tail", "raw", "crc_ok")
 
     def __init__(self, raw: bytes) -> None:
         self.raw = raw
@@ -65,7 +65,8 @@ class Reading:
         raw_mv = struct.unpack("<H", raw[18:20])[0]
         self.voltage = round(raw_mv / 1000.0, 3) if 2500 <= raw_mv <= 4500 else None
         self.co2 = struct.unpack("<H", raw[20:22])[0]
-        self.alarm = raw[22] == 1
+        self.alarm_level = raw[22]
+        self.alarm = self.alarm_level != 0
         self.temperature = raw[23]
         self.humidity = raw[24]
         self.tail = raw[25:27]
@@ -92,7 +93,8 @@ def render(r: Reading, prev: Reading | None) -> str:
     gap = f"{r.timestamp - prev.timestamp:>3}s" if prev else "  -"
     v_str = f"{r.voltage:.3f}V" if r.voltage is not None else " ----V"
     c_str = "CHG" if r.charging else "BAT"
-    a_str = " [ALARM]" if r.alarm else ""
+    risk_labels = {0: "", 1: " [ALERT:MED]", 2: " [ALARM:HIGH]"}
+    a_str = risk_labels.get(r.alarm_level, f" [ALARM:{r.alarm_level}]")
     if not r.valid:
         return (f"{when:%H:%M:%S}  {gap}   "
                 f"CO2 ---- ppm   T --- C   RH --- %   "
