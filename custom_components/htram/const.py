@@ -17,10 +17,9 @@ WRITE_UUID = "3D115840-6E0B-11E4-B24F-0002A5D5C51B"
 # How often to poll over Bluetooth, in seconds.
 POLL_INTERVAL = 60
 
-# With MQTT supplying the readings, Bluetooth is only needed for the battery,
-# the charging flag and the settings -- none of which move quickly. Polling
-# rarely keeps the radio out of the way.
-POLL_INTERVAL_WITH_MQTT = 900
+# How long a deliberate Bluetooth session stays open before the link is
+# released and telemetry resumes, in seconds.
+BLE_SESSION_DURATION = 300
 
 # Telemetry topics. The device publishes on C/ and subscribes on D/, using its
 # serial number as both the client id and the topic suffix.
@@ -43,7 +42,7 @@ CONF_AES_IV = "aes_iv"
 MQTT_STALE_AFTER = 300
 
 # Keys the MQTT payload carries. Everything else stays on Bluetooth.
-MQTT_KEYS = ("co2", "temperature", "humidity")
+MQTT_KEYS = ("co2", "temperature", "humidity", "battery", "charging")
 
 # Built once at import: these have no arguments, so the frames never vary.
 # Commands that take a value are built at the call site from protocol.

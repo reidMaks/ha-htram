@@ -10,14 +10,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 
-from datetime import timedelta
-
-from .const import (
-    CONF_MQTT_ENABLED,
-    CONF_SERIAL,
-    DOMAIN,
-    POLL_INTERVAL_WITH_MQTT,
-)
+from .const import CONF_MQTT_ENABLED, CONF_SERIAL, DOMAIN
 from .coordinator import HTRAMDataUpdateCoordinator, HtramConfigEntry
 from .mqtt_source import HtramMqttSource
 
@@ -110,7 +103,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: HtramConfigEntry) -> boo
     coordinator = HTRAMDataUpdateCoordinator(hass, entry, address.upper())
     coordinator.mqtt_enabled = mqtt_enabled
     if mqtt_enabled:
-        coordinator.update_interval = timedelta(seconds=POLL_INTERVAL_WITH_MQTT)
+        # No periodic Bluetooth polling at all. Releasing the link costs the
+        # radio entirely -- the device advertises for about a minute and then
+        # switches Bluetooth off until its button is pressed -- so a schedule
+        # would fire once and never again. Bluetooth becomes something the
+        # user starts deliberately, standing at the device.
+        coordinator.update_interval = None
     if mqtt_enabled:
         # Must not raise: a failed Bluetooth poll is expected here.
         await coordinator.async_refresh()

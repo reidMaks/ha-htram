@@ -53,14 +53,19 @@ HUM_INVALID = 0xFE
 
 
 class Reading:
-    __slots__ = ("timestamp", "co2", "temperature", "humidity", "mid", "tail",
-                 "raw", "crc_ok")
+    __slots__ = ("timestamp", "co2", "temperature", "humidity", "charging",
+                 "battery", "voltage", "alarm", "mid", "tail", "raw", "crc_ok")
 
     def __init__(self, raw: bytes) -> None:
         self.raw = raw
         self.timestamp = struct.unpack("<I", raw[6:10])[0]
         self.mid = raw[16:20]
+        self.charging = raw[16] == 1
+        self.battery = min(raw[17] * 25, 100)
+        raw_mv = struct.unpack("<H", raw[18:20])[0]
+        self.voltage = round(raw_mv / 1000.0, 3) if 2500 <= raw_mv <= 4500 else None
         self.co2 = struct.unpack("<H", raw[20:22])[0]
+        self.alarm = raw[22] == 1
         self.temperature = raw[23]
         self.humidity = raw[24]
         self.tail = raw[25:27]
@@ -85,13 +90,18 @@ def parse(raw: bytes) -> Reading | None:
 def render(r: Reading, prev: Reading | None) -> str:
     when = datetime.fromtimestamp(r.timestamp, timezone.utc).astimezone()
     gap = f"{r.timestamp - prev.timestamp:>3}s" if prev else "  -"
+    v_str = f"{r.voltage:.3f}V" if r.voltage is not None else " ----V"
+    c_str = "CHG" if r.charging else "BAT"
+    a_str = " [ALARM]" if r.alarm else ""
     if not r.valid:
         return (f"{when:%H:%M:%S}  {gap}   "
                 f"CO2 ---- ppm   T --- C   RH --- %   "
-                f"mid {r.mid.hex()}  crc {'ok' if r.crc_ok else 'BAD'}   <warm-up, discard>")
+                f"Batt {r.battery:>3}% ({c_str} {v_str})   "
+                f"crc {'ok' if r.crc_ok else 'BAD'}   <warm-up, discard>")
     return (f"{when:%H:%M:%S}  {gap}   "
             f"CO2 {r.co2:>4} ppm   T {r.signed_temp():>3} C   RH {r.humidity:>3} %   "
-            f"mid {r.mid.hex()}  crc {'ok' if r.crc_ok else 'BAD'}")
+            f"Batt {r.battery:>3}% ({c_str} {v_str}){a_str}   "
+            f"crc {'ok' if r.crc_ok else 'BAD'}")
 
 
 def main() -> int:

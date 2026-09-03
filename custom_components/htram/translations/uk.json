@@ -83,6 +83,9 @@
     "button": {
       "sync_time": {
         "name": "Синхронізувати час"
+      },
+      "ble_session": {
+        "name": "Сеанс Bluetooth"
       }
     }
   },

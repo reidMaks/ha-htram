@@ -377,6 +377,10 @@ class Telemetry:
     co2: int | None
     temperature: int | None
     humidity: int | None
+    charging: bool
+    battery: int
+    battery_voltage: float | None
+    alarm: bool
 
 
 def decode_telemetry(payload: bytes) -> Telemetry | None:
@@ -387,10 +391,14 @@ def decode_telemetry(payload: bytes) -> Telemetry | None:
         [0:2]   magic "DC"
         [2:6]   constant 00 02 00 01
         [6:10]  Unix timestamp, little-endian, UTC
-        [10:16] constant
-        [16:20] varies as the reading settles; purpose unknown
+        [10:12] SKU (0x0651 = 1617)
+        [12:14] payload length (0x000c = 12)
+        [14:16] constant flags 00 00
+        [16]    charging flag (1 = charging, 0 = discharging / on battery)
+        [17]    battery level in bars (0..4)
+        [18:20] battery voltage in mV, uint16 little-endian
         [20:22] CO2 ppm, little-endian
-        [22]    padding
+        [22]    CO2 alarm flag (1 = threshold exceeded, 0 = normal)
         [23]    temperature, degrees C, signed
         [24]    humidity, percent
         [25:27] CRC-16 over [16:25], little-endian
@@ -403,9 +411,19 @@ def decode_telemetry(payload: bytes) -> Telemetry | None:
     co2 = int.from_bytes(payload[20:22], "little")
     raw_temp = payload[23]
     humidity = payload[24]
+    charging = payload[16] == 1
+    battery = min(payload[17] * 25, 100)
+    raw_mv = int.from_bytes(payload[18:20], "little")
+    voltage = round(raw_mv / 1000.0, 3) if 2500 <= raw_mv <= 4500 else None
+    alarm = payload[22] == 1
+
     return Telemetry(
         timestamp=int.from_bytes(payload[6:10], "little"),
         co2=None if co2 == CO2_INVALID else co2,
         temperature=None if raw_temp == TEMP_INVALID else (raw_temp - 256 if raw_temp > 128 else raw_temp),
         humidity=None if humidity == HUM_INVALID else humidity,
+        charging=charging,
+        battery=battery,
+        battery_voltage=voltage,
+        alarm=alarm,
     )

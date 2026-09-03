@@ -92,15 +92,15 @@ to avoid, and resuming it unannounced is how a working setup quietly degrades.
 | `sensor.<device>_co2` | MQTT when enabled, otherwise Bluetooth |
 | `sensor.<device>_temperature` | " |
 | `sensor.<device>_humidity` | " |
-| `sensor.<device>_battery_level` | Bluetooth |
+| `sensor.<device>_battery_level` | " |
 | `sensor.<device>_data_source` | diagnostic: `bluetooth` or `mqtt` |
-| `binary_sensor.<device>_charging` | Bluetooth |
-| `switch.<device>_mute` | on means silent |
-| `select.<device>_temperature_unit` | display only; telemetry stays Celsius |
-| `select.<device>_screen_off_timer` | |
-| `number.<device>_co2_alarm_low` | yellow threshold |
-| `number.<device>_co2_alarm_high` | red threshold |
-| `button.<device>_sync_time` | sets the device clock, UTC |
+| `binary_sensor.<device>_charging` | MQTT when enabled, otherwise Bluetooth |
+| `switch.<device>_mute` | on means silent (Bluetooth only) |
+| `select.<device>_temperature_unit` | display only; telemetry stays Celsius (Bluetooth only) |
+| `select.<device>_screen_off_timer` | Bluetooth only |
+| `number.<device>_co2_alarm_low` | yellow threshold (Bluetooth only) |
+| `number.<device>_co2_alarm_high` | red threshold (Bluetooth only) |
+| `button.<device>_sync_time` | sets the device clock, UTC (Bluetooth only) |
 
 There is also a `htram.configure_device` service, which provisions a targeted
 monitor without going through the options dialog.
@@ -126,10 +126,10 @@ window closes and the button has to be pressed. This is why the MQTT path
 exists: telemetry survives a restart without any of that.
 
 **With MQTT configured, losing Bluetooth costs only the controls.** The
-readings keep arriving; the buzzer switch, thresholds, screen timer, unit
-selector, battery and charging report unavailable until the radio comes back.
-Without MQTT, Bluetooth is the only source and the integration waits for the
-device instead.
+readings, battery level and charging flag keep arriving over MQTT; only the
+buzzer switch, thresholds, screen timer, and unit selector report unavailable
+until the radio comes back. Without MQTT, Bluetooth is the only source and
+the integration waits for the device instead.
 
 ## Development
 

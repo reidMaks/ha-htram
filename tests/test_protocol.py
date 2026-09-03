@@ -217,6 +217,30 @@ def test_decode_telemetry_known_frame():
     assert reading.co2 == 650
     assert reading.temperature == 23
     assert reading.humidity == 58
+    assert reading.charging is True
+    assert reading.battery == 100
+    assert reading.battery_voltage == 4.141
+    assert reading.alarm is False
+
+
+def test_decode_telemetry_battery_discharging_and_alarm():
+    # Discharging frame (charging=0, battery=100%, 4.156V)
+    reading = p.decode_telemetry(
+        bytes.fromhex("4443000200012f1f996a5106000c000000043c108a0200183350b8")
+    )
+    assert reading.charging is False
+    assert reading.battery == 100
+    assert reading.battery_voltage == 4.156
+    assert reading.alarm is False
+
+    # Alarm active frame (CO2 = 800 ppm, byte 22 = 1)
+    alarm_reading = p.decode_telemetry(
+        bytes.fromhex("444300020001a920996a5106000c00000104441020030117378cc7")
+    )
+    assert alarm_reading.co2 == 800
+    assert alarm_reading.alarm is True
+    assert alarm_reading.charging is True
+    assert alarm_reading.battery_voltage == 4.164
 
 
 def test_decode_telemetry_rejects_corruption():

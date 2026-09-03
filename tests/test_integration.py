@@ -269,14 +269,18 @@ async def test_readings_survive_losing_bluetooth(
         await entry.runtime_data.async_refresh()
         await hass.async_block_till_done()
 
-        # The entry stays loaded and telemetry keeps feeding the sensors.
+        # The entry stays loaded and telemetry keeps feeding the sensors, battery and charging.
         assert entry.state.name == "LOADED"
         assert state_of(hass, "co2") == "650"
         assert state_of(hass, "temperature") == "23"
-
-        # What genuinely needs the radio says so.
-        assert state_of(hass, "battery") == "unavailable"
+        assert state_of(hass, "battery") == "100"
         registry = er.async_get(hass)
+        charging = registry.async_get_entity_id(
+            "binary_sensor", DOMAIN, f"{ADDRESS}_charging"
+        )
+        assert hass.states.get(charging).state == "on"
+
+        # What genuinely needs the radio (controls) says so.
         switch = registry.async_get_entity_id("switch", DOMAIN, f"{ADDRESS}_mute")
         assert hass.states.get(switch).state == "unavailable"
     finally:
@@ -289,13 +293,13 @@ async def test_polling_is_rare_when_mqtt_supplies_the_readings(
     """Bluetooth should stay out of the way when it is not the source.
 
     The device suspends telemetry while a Bluetooth session is open, so with
-    MQTT configured the radio is only wanted occasionally, for the battery and
-    the settings.
+    MQTT configured the radio is only wanted when the user deliberately opens
+    a session or calls a control service.
     """
     entry = await setup_entry(
         hass, ble_device, options={CONF_MQTT_ENABLED: True, CONF_SERIAL: SERIAL}
     )
-    assert entry.runtime_data.update_interval.total_seconds() == 900
+    assert entry.runtime_data.update_interval is None
 
 
 async def test_polling_stays_frequent_without_mqtt(

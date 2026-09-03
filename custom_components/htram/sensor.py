@@ -74,8 +74,9 @@ class HTRAMSensor(HtramEntity, SensorEntity):
         quiet, or the Bluetooth poll failed. Showing the last one indefinitely
         would draw a flat line through an outage.
 
-        Battery has no MQTT equivalent, so it also needs the radio; the other
-        three do not, and keep going from telemetry when Bluetooth is gone.
+        With MQTT supplying readings, battery and readings keep going from
+        telemetry when Bluetooth is gone. Only keys outside MQTT_KEYS need the
+        radio.
         """
         if self.coordinator.data.get(self._key) is None:
             return False

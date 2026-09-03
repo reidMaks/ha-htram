@@ -54,6 +54,8 @@ def test_telemetry_switches_the_source_and_notifies(coordinator):
     assert coordinator.data["co2"] == 650
     assert coordinator.data["temperature"] == 23
     assert coordinator.data["humidity"] == 58
+    assert coordinator.data["battery"] == 100
+    assert coordinator.data["charging"] is True
     coordinator.async_set_updated_data.assert_called_once()
 
 

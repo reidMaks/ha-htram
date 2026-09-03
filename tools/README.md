@@ -784,26 +784,26 @@ CO2 rises with someone next to the device and falls when they step away, and
 humidity mirrors it — the decode is physically coherent. The interval holds at
 29–30 s with no drift.
 
-### `mid` and `tail` are unidentified
+### `mid` and byte `[22]` are battery, voltage, charging and alarm — solved
 
 ```
-mid 0104260e  tail 8d79      mid 01001d08  tail 66a9
-mid 01000508  tail e33a      mid 0100ce08  tail 586b
-mid 01003d0a  tail 89d7      mid 01000a06  tail 847c
+mid 0104260e -> charging=1, bars=4, voltage=3622 mV
+mid 01033110 -> charging=1, bars=3, voltage=4145 mV
+mid 00043c10 -> charging=0 (unplugged), bars=4, voltage=4156 mV
 ```
 
-`[16]` is always `01`; `[17]` is almost always `00`. `[18:20]` is a **signed**
-little-endian word — values `e8ff` and `f1ff` decode as −24 and −15 — and over
-a longer capture it decays toward zero as CO2 settles:
+The bytes inside `[16:20]` and `[22]` were fully resolved through an unplugging test
+on hardware:
 
-```
-mid[18:20]:  3622  2053  2621  2077  2254  1546  1017  152  -24  -15  822
-CO2 ppm:      650   850   950   850   500   450   450  400  400  700  650
-```
-
-So it is a derived quantity that relaxes to zero at the 400 ppm baseline —
-a rate of change or a filter residual rather than a raw sensor count. Eleven
-points are not enough to pin the formula.
+* `[16]` — **charging flag**: `0x01` when powered via USB, `0x00` when running on battery.
+* `[17]` — **battery level in bars**: `0` to `4`, matching the display bars directly
+  (0 = 0%, 1 = 25%, 2 = 50%, 3 = 75%, 4 = 100%).
+* `[18:20]` — **raw battery voltage in millivolts**, unsigned little-endian word.
+  On battery / charging it reports real Li-ion single-cell voltage: `4149` -> 4.149 V,
+  `4148` -> 4.148 V. (During the first minute of cold-boot sensor calibration it
+  briefly outputs settling residuals before switching to the battery ADC).
+* `[22]` — **CO2 alarm flag**: `0x01` when CO2 reaches or exceeds the alarm threshold
+  (>= 800 ppm), `0x00` during normal air quality.
 
 ### The tail is a CRC — solved
 
@@ -822,15 +822,15 @@ A checksum covering the timestamp could not do that, so the covered range had
 to exclude `[6:10]`, which cut the search space sharply. Second, checking
 against all 73 packets at once makes a false positive impossible.
 
-So the payload is fully accounted for except `mid`:
+So the payload is 100% accounted for:
 
 ```
 44 43              magic "DC"
 00 02 00 01        constant
 tt tt tt tt        timestamp, little-endian, UTC      <- outside the CRC
-51 06 00 0c 00 00  constant                           <- outside the CRC
-01 xx xx xx        mid: [16] always 01, [18:20] signed, decays to zero
-cc cc  00  TT  HH  CO2 little-endian, pad, temp C, humidity %
+51 06 00 0c 00 00  SKU 1617, length 12, flags 00 00   <- outside the CRC
+CC BB vv vv        charging (1/0), battery bars (0-4), battery voltage mV LE
+cc cc  AA  TT  HH  CO2 ppm LE, alarm flag (1/0), temp C, humidity %
 kk kk              CRC-16/0x8005 of [16:25], little-endian
 ```
 

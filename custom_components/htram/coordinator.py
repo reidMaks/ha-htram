@@ -12,6 +12,7 @@ from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
@@ -21,6 +22,7 @@ from .const import (
     CMD_GET_REALTIME,
     CMD_GET_SETTINGS,
     CMD_GET_SOUND_STATUS,
+    BLE_SESSION_DURATION,
     CMD_HEARTBEAT,
     MQTT_KEYS,
     MQTT_STALE_AFTER,
@@ -70,6 +72,48 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         self.mqtt_enabled = False
         self._mqtt_last_seen: float | None = None
 
+    async def async_start_ble_session(self) -> None:
+        """Open a deliberate Bluetooth session.
+
+        The two transports are mutually exclusive on this hardware. A held link
+        suppresses telemetry; releasing it loses Bluetooth entirely, because
+        the device advertises for about a minute and then switches the radio
+        off until its button is pressed again.
+
+        So control is an explicit, time-boxed event: press the button on the
+        device, press this, make the changes, and the link is released on its
+        own so telemetry resumes.
+        """
+        self._cancel_session_release()
+        await self.async_refresh()
+        if not self.ble_ok:
+            raise HomeAssistantError(
+                f"{self.address} did not answer. Press the button on the device "
+                f"first -- it only advertises for about a minute, then switches "
+                f"Bluetooth off until pressed again"
+            )
+        self._session_release = async_call_later(
+            self.hass, BLE_SESSION_DURATION, self._async_release_session
+        )
+        _LOGGER.debug("Bluetooth session open for %d s", BLE_SESSION_DURATION)
+
+    async def async_end_ble_session(self) -> None:
+        """Release the link so telemetry resumes."""
+        self._cancel_session_release()
+        await self._cleanup_client()
+        self.ble_ok = False
+        self.async_update_listeners()
+
+    def _cancel_session_release(self) -> None:
+        if self._session_release is not None:
+            self._session_release()
+            self._session_release = None
+
+    async def _async_release_session(self, _now) -> None:
+        self._session_release = None
+        _LOGGER.debug("Bluetooth session expired; releasing the link")
+        await self.async_end_ble_session()
+
     @property
     def mqtt_is_fresh(self) -> bool:
         """Whether MQTT telemetry arrived recently enough to be trusted."""
@@ -93,6 +137,11 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         self.data["co2"] = reading.co2
         self.data["temperature"] = reading.temperature
         self.data["humidity"] = reading.humidity
+        self.data["battery"] = reading.battery
+        self.data["charging"] = reading.charging
+        if reading.battery_voltage is not None:
+            self.data["battery_voltage"] = reading.battery_voltage
+        self.data["co2_alarm"] = reading.alarm
         self.data["last_telemetry"] = reading.timestamp
         self.async_set_updated_data(self.data)
 
@@ -120,7 +169,7 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         """Decide what a failed Bluetooth poll means.
 
         With MQTT supplying the readings, losing Bluetooth costs the controls
-        and the battery figure -- not the sensors. Raising UpdateFailed here
+        -- not the sensors, battery or charging. Raising UpdateFailed here
         would mark the coordinator unsuccessful and take every entity down
         with it, including the ones MQTT is still feeding.
         """
@@ -244,13 +293,11 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
 
                 await client.stop_notify(NOTIFY_UUID)
 
-                # Hold the link only when Bluetooth is the sole source. The
-                # device appears to suspend its telemetry while a Bluetooth
-                # session is open -- it has an explicit radio-mode command and
-                # treats the two as modes -- so with MQTT configured an idle
-                # open link would cost exactly the readings it is there to
-                # protect.
-                if self.mqtt_enabled:
+                # Outside a deliberate session, release the link so telemetry
+                # resumes. Confirmed on hardware: of three provisioned
+                # monitors, the one holding a Bluetooth connection was the one
+                # publishing nothing.
+                if self.mqtt_enabled and self._session_release is None:
                     await self._cleanup_client()
 
                 # If we had a timeout on realtime data, our connection might be bad.

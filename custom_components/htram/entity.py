@@ -36,12 +36,12 @@ class HtramEntity(CoordinatorEntity[HTRAMDataUpdateCoordinator]):
 
 
 class HtramBluetoothEntity(HtramEntity):
-    """For entities only Bluetooth can supply or drive.
+    """For entities only Bluetooth can drive.
 
-    The controls, the battery and the charging flag have no MQTT equivalent:
-    the telemetry payload carries readings and nothing else. When the radio is
-    gone these report unavailable on their own, while the CO2, temperature and
-    humidity sensors carry on from MQTT.
+    The controls (mute, alarm thresholds, screen-off, temperature unit) have
+    no MQTT equivalent: downlink is unsupported by the firmware. When the
+    radio is gone these report unavailable on their own, while the sensors,
+    battery and charging carry on from MQTT.
     """
 
     @property
