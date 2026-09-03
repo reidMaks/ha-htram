@@ -302,3 +302,72 @@ async def test_ble_session_lifecycle(coordinator, monkeypatch):
     timer_handle.assert_called_once()
     coordinator._cleanup_client.assert_awaited_once()
 
+
+def test_downlink_ack_ignored_silently(coordinator):
+    """An instant 15-byte ACK must not increment the undecodable count."""
+    from htram.mqtt_source import HtramMqttSource
+
+    source = HtramMqttSource(MagicMock(), coordinator, "RM1221412257")
+    ack = bytes.fromhex("444300020204785634125106000000")
+
+    msg = MagicMock()
+    msg.payload = ack
+    source._handle_message(msg)
+
+    assert source._undecodable == 0
+
+
+def test_mqtt_control_available(coordinator, monkeypatch):
+    """Control via MQTT is available only when enabled, source attached, fresh, and connected."""
+    coordinator.hass = MagicMock()
+    coordinator.mqtt_enabled = True
+    coordinator.mqtt_source = MagicMock()
+    coordinator._mqtt_last_seen = 1000.0
+
+    import time
+    monkeypatch.setattr(time, "monotonic", lambda: 1010.0)
+
+    import homeassistant.components.mqtt as ha_mqtt
+    monkeypatch.setattr(ha_mqtt, "is_connected", lambda hass: True)
+
+    assert coordinator.mqtt_control_available is True
+
+    # Stale telemetry disables MQTT control
+    monkeypatch.setattr(time, "monotonic", lambda: 1400.0)
+    assert coordinator.mqtt_control_available is False
+
+    # Disconnected broker disables MQTT control
+    monkeypatch.setattr(time, "monotonic", lambda: 1010.0)
+    monkeypatch.setattr(ha_mqtt, "is_connected", lambda hass: False)
+    assert coordinator.mqtt_control_available is False
+
+
+def test_coordinator_downlink_builder(coordinator):
+    """Downlink packet builder preserves known state while overriding requested fields."""
+    coordinator.data = {
+        "alarm_low": 750,
+        "alarm_high": 1200,
+        "screen_off": 120,
+        "temp_unit": "F",
+        "mute": True,
+        "screen_on": True,
+        "brightness": 90,
+    }
+
+    payload = coordinator._build_downlink_payload(mute=False, low=700)
+    assert len(payload) == 31
+    assert payload[:6] == b"DC\x00\x02\x00\x04"
+    # Low threshold: 700
+    assert int.from_bytes(payload[17:19], "little") == 700
+    # High threshold: 1200 (preserved)
+    assert int.from_bytes(payload[15:17], "little") == 1200
+    # Brightness: 90 (preserved)
+    assert int.from_bytes(payload[19:21], "little") == 90
+    # Auto-off: 1 (since screen_off=120 != 0)
+    assert int.from_bytes(payload[21:23], "little") == 1
+    # Temp unit: 1 (F)
+    assert int.from_bytes(payload[23:25], "little") == 1
+    # Buzzer: 0 (since mute=False)
+    assert int.from_bytes(payload[27:29], "little") == 0
+
+

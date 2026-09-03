@@ -117,14 +117,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: HtramConfigEntry) -> boo
 
     entry.runtime_data = coordinator
 
-    # Telemetry over MQTT is opt-in: it needs a broker the device can reach,
+    # Telemetry and downlink over MQTT are opt-in: it needs a broker the device can reach,
     # which is a good deal of setup, so nothing here assumes it.
     if coordinator.mqtt_enabled:
         serial = entry.options.get(CONF_SERIAL)
         if serial:
             source = HtramMqttSource(hass, coordinator, serial)
+            coordinator.mqtt_source = source
+
+            def _stop_source() -> None:
+                source.async_stop()
+                coordinator.mqtt_source = None
+
             if await source.async_start():
-                entry.async_on_unload(source.async_stop)
+                entry.async_on_unload(_stop_source)
         else:
             _LOGGER.error(
                 "MQTT telemetry is enabled but no serial number is configured; "

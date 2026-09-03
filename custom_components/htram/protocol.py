@@ -430,3 +430,72 @@ def decode_telemetry(payload: bytes) -> Telemetry | None:
         alarm=alarm,
         alarm_level=alarm_level,
     )
+
+
+# -------------------------------------------------------------- MQTT downlink
+
+DOWNLINK_MAGIC = b"DC"
+DOWNLINK_LENGTH = 31
+DOWNLINK_CMD_SETTINGS = 0x04
+
+DOWNLINK_ACK_MAGIC = b"DC\x00\x02\x02\x04"
+DOWNLINK_ACK_LENGTH = 15
+
+
+def is_downlink_ack(payload: bytes) -> bool:
+    """Check if payload is an instant ACK response (15 bytes) on C/<serial>."""
+    return len(payload) == DOWNLINK_ACK_LENGTH and payload.startswith(DOWNLINK_ACK_MAGIC)
+
+
+def build_downlink_settings(
+    high_threshold: int = 1000,
+    low_threshold: int = 800,
+    brightness: int = 100,
+    auto_off: int = 0,
+    temp_unit: int = 0,
+    screen_on: int = 1,
+    buzzer: int = 0,
+    transaction_id: int | None = None,
+    sku: bytes = b"\x51\x06",
+) -> bytes:
+    """Build a 31-byte downlink packet for D/<serial>.
+
+    Format:
+        [0:5]   Magic + version: b"DC\x00\x02\x00"
+        [5]     Command Type: 0x04 (Set Settings)
+        [6:10]  Transaction ID (uint32 LE, timestamp if None)
+        [10:12] SKU check: 0x51 0x06 (SKU 1617)
+        [12:15] Length: 0x00 0x00 0x0E (14 bytes body)
+        [15:17] High CO2 alarm threshold (uint16 LE)
+        [17:19] Low CO2 alarm threshold (uint16 LE)
+        [19:21] Brightness (uint16 LE, 0..100)
+        [21:23] Auto screen-off timeout (uint16 LE: 0 = Always ON, 1 = 2 min)
+        [23:25] Temperature unit (uint16 LE: 0 = Celsius, 1 = Fahrenheit)
+        [25:27] Screen display (uint16 LE: 1 = ON, 0 = OFF)
+        [27:29] Buzzer mute (uint16 LE: 0 = Sound ON / Alert, 1 = Muted)
+        [29:31] CRC-16 over [15:29] (uint16 LE)
+    """
+    if transaction_id is None:
+        import time
+        transaction_id = int(time.time())
+
+    header = bytearray(DOWNLINK_MAGIC + b"\x00\x02\x00")
+    header.append(DOWNLINK_CMD_SETTINGS)
+    header.extend(struct.pack("<I", transaction_id & 0xFFFFFFFF))
+    header.extend(sku)
+    header.extend(b"\x00\x00\x0e")
+
+    body = bytearray()
+    body.extend(struct.pack("<H", high_threshold))
+    body.extend(struct.pack("<H", low_threshold))
+    body.extend(struct.pack("<H", brightness))
+    body.extend(struct.pack("<H", auto_off))
+    body.extend(struct.pack("<H", temp_unit))
+    body.extend(struct.pack("<H", screen_on))
+    body.extend(struct.pack("<H", buzzer))
+
+    chk = struct.pack("<H", crc16(body))
+    frame = bytes(header + body + chk)
+    assert len(frame) == DOWNLINK_LENGTH
+    return frame
+

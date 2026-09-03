@@ -19,13 +19,13 @@ from homeassistant.components import mqtt
 from homeassistant.core import HomeAssistant, callback
 
 from . import protocol
-from .const import TELEMETRY_TOPIC
+from .const import DOWNLINK_TOPIC, TELEMETRY_TOPIC
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class HtramMqttSource:
-    """Subscription to one device's telemetry topic."""
+    """Subscription to one device's telemetry topic and downlink publisher."""
 
     def __init__(self, hass: HomeAssistant, coordinator, serial: str) -> None:
         """Initialise the source. Nothing is subscribed until started."""
@@ -33,6 +33,7 @@ class HtramMqttSource:
         self.coordinator = coordinator
         self.serial = serial
         self.topic = TELEMETRY_TOPIC.format(serial=serial)
+        self.downlink_topic = DOWNLINK_TOPIC.format(serial=serial)
         self._unsubscribe: Callable[[], None] | None = None
         self._undecodable = 0
 
@@ -67,12 +68,34 @@ class HtramMqttSource:
             self._unsubscribe = None
             _LOGGER.debug("Unsubscribed from %s", self.topic)
 
+    async def async_send_downlink(self, payload: bytes) -> bool:
+        """Publish a downlink command to D/<serial>."""
+        if not mqtt.is_connected(self.hass):
+            _LOGGER.warning(
+                "Cannot send downlink to %s: MQTT broker is not connected", self.serial
+            )
+            return False
+        _LOGGER.debug(
+            "Publishing downlink (%d bytes) to %s: %s",
+            len(payload),
+            self.downlink_topic,
+            payload.hex(),
+        )
+        await mqtt.async_publish(
+            self.hass, self.downlink_topic, payload, qos=0, retain=False, encoding=None
+        )
+        return True
+
     @callback
     def _handle_message(self, msg: mqtt.ReceiveMessage) -> None:
         """Decode one payload and hand it to the coordinator."""
         payload = msg.payload
         if isinstance(payload, str):  # a mis-set encoding upstream
             payload = payload.encode("utf-8", "surrogateescape")
+
+        if protocol.is_downlink_ack(payload):
+            _LOGGER.debug("Received downlink ACK on %s: %s", self.topic, payload.hex())
+            return
 
         reading = protocol.decode_telemetry(payload)
         if reading is None:
@@ -89,3 +112,4 @@ class HtramMqttSource:
             return
 
         self.coordinator.async_apply_telemetry(reading)
+

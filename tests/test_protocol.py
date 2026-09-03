@@ -293,3 +293,38 @@ def test_iter_frames_survives_a_split_frame():
 def test_iter_frames_finds_a_frame_after_leading_noise():
     whole = bytes.fromhex("7b410006250101f8357d")
     assert list(p.iter_frames(b"\x00\xff" + whole)) == [whole]
+
+
+def test_build_downlink_settings():
+    """Verify downlink packet builder creates 31-byte frame with correct CRC."""
+    frame = p.build_downlink_settings(
+        high_threshold=1000,
+        low_threshold=800,
+        brightness=100,
+        auto_off=0,
+        temp_unit=0,
+        screen_on=1,
+        buzzer=0,
+        transaction_id=0x12345678,
+    )
+    assert len(frame) == 31
+    assert frame[:6] == b"DC\x00\x02\x00\x04"
+    assert frame[6:10] == bytes.fromhex("78563412")
+    assert frame[10:12] == b"\x51\x06"
+    assert frame[12:15] == b"\x00\x00\x0e"
+    # Verify CRC over payload [15:29]
+    payload = frame[15:29]
+    assert len(payload) == 14
+    computed_crc = p.crc16(payload)
+    assert frame[29:31] == computed_crc.to_bytes(2, "little")
+
+
+def test_is_downlink_ack():
+    """Verify recognition of instant 15-byte ACK packets on C/<serial>."""
+    ack = bytes.fromhex("444300020204785634125106000000")
+    assert p.is_downlink_ack(ack) is True
+    # Telemetry should not be confused with ACK
+    telemetry = bytes.fromhex("444300020001c818976a5106000c000001042d108a0200173a150c")
+    assert p.is_downlink_ack(telemetry) is False
+    assert p.is_downlink_ack(b"") is False
+

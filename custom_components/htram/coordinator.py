@@ -72,6 +72,7 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         # disturb the pairing.
         self.mqtt_enabled = False
         self._mqtt_last_seen: float | None = None
+        self.mqtt_source = None
 
     async def async_start_ble_session(self) -> None:
         """Open a deliberate Bluetooth session.
@@ -121,6 +122,18 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         if not self.mqtt_enabled or self._mqtt_last_seen is None:
             return False
         return (time.monotonic() - self._mqtt_last_seen) < MQTT_STALE_AFTER
+
+    @property
+    def mqtt_control_available(self) -> bool:
+        """Whether MQTT downlink is currently available for controlling the device."""
+        if not self.mqtt_enabled or self.mqtt_source is None or not self.mqtt_is_fresh:
+            return False
+        try:
+            from homeassistant.components import mqtt
+
+            return mqtt.is_connected(self.hass)
+        except Exception:
+            return False
 
     @property
     def active_source(self) -> str:
@@ -385,9 +398,62 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         self.data["alarm_high"] = settings.alarm_high
         self.data["screen_off"] = settings.screen_off
 
+    def _build_downlink_payload(
+        self,
+        *,
+        low: int | None = None,
+        high: int | None = None,
+        screen_off: int | None = None,
+        temp_unit_c: bool | None = None,
+        screen_on: bool | None = None,
+        mute: bool | None = None,
+    ) -> bytes:
+        """Build a 31-byte downlink packet reflecting current and requested states."""
+        new_low = low if low is not None else self.data.get("alarm_low", 800)
+        new_high = high if high is not None else self.data.get("alarm_high", 1000)
+        new_screen_off = (
+            screen_off if screen_off is not None else self.data.get("screen_off", 0)
+        )
+        auto_off = 1 if new_screen_off != 0 else 0
+
+        if temp_unit_c is not None:
+            is_c = temp_unit_c
+        else:
+            is_c = self.data.get("temp_unit", "C") == "C"
+        temp_unit = 0 if is_c else 1
+
+        if screen_on is not None:
+            disp = 1 if screen_on else 0
+        else:
+            disp = 1 if self.data.get("screen_on", True) else 0
+
+        if mute is not None:
+            is_muted = mute
+        else:
+            is_muted = self.data.get("mute", False)
+        buzzer = 1 if is_muted else 0
+
+        brightness = self.data.get("brightness", 100)
+
+        return protocol.build_downlink_settings(
+            high_threshold=new_high,
+            low_threshold=new_low,
+            brightness=brightness,
+            auto_off=auto_off,
+            temp_unit=temp_unit,
+            screen_on=disp,
+            buzzer=buzzer,
+        )
+
     async def async_set_mute(self, mute: bool) -> None:
         """Turn the alarm buzzer off or on."""
-        await self._send_command(protocol.set_sound(not mute))
+        if self.mqtt_control_available:
+            _LOGGER.debug("Setting mute to %s via MQTT downlink", mute)
+            payload = self._build_downlink_payload(mute=mute)
+            await self.mqtt_source.async_send_downlink(payload)
+        else:
+            _LOGGER.debug("Setting mute to %s via Bluetooth", mute)
+            await self._send_command(protocol.set_sound(not mute))
         self.data["mute"] = mute
         self.async_update_listeners()
 
@@ -397,7 +463,13 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         This changes the panel only. Telemetry keeps reporting Celsius either
         way, which is why the console experiments used this as a probe.
         """
-        await self._send_command(protocol.set_temperature_unit(celsius))
+        if self.mqtt_control_available:
+            _LOGGER.debug("Setting temp unit to %s via MQTT downlink", "C" if celsius else "F")
+            payload = self._build_downlink_payload(temp_unit_c=celsius)
+            await self.mqtt_source.async_send_downlink(payload)
+        else:
+            _LOGGER.debug("Setting temp unit to %s via Bluetooth", "C" if celsius else "F")
+            await self._send_command(protocol.set_temperature_unit(celsius))
         self.data["temp_unit"] = "C" if celsius else "F"
         self.async_update_listeners()
 
@@ -424,9 +496,27 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
                 f"({new_high} ppm)"
             )
 
-        await self._send_command(
-            protocol.set_thresholds(new_low, new_high, new_screen_off)
-        )
+        if self.mqtt_control_available:
+            _LOGGER.debug(
+                "Setting thresholds (low=%d, high=%d, screen_off=%d) via MQTT downlink",
+                new_low,
+                new_high,
+                new_screen_off,
+            )
+            payload = self._build_downlink_payload(
+                low=new_low, high=new_high, screen_off=new_screen_off
+            )
+            await self.mqtt_source.async_send_downlink(payload)
+        else:
+            _LOGGER.debug(
+                "Setting thresholds (low=%d, high=%d, screen_off=%d) via Bluetooth",
+                new_low,
+                new_high,
+                new_screen_off,
+            )
+            await self._send_command(
+                protocol.set_thresholds(new_low, new_high, new_screen_off)
+            )
         self.data["alarm_low"] = new_low
         self.data["alarm_high"] = new_high
         self.data["screen_off"] = new_screen_off
@@ -434,7 +524,13 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def async_set_screen_off(self, minutes: int) -> None:
         """Set the screen-off timer on its own."""
-        await self._send_command(protocol.set_screen_off(minutes))
+        if self.mqtt_control_available:
+            _LOGGER.debug("Setting screen-off timer to %d via MQTT downlink", minutes)
+            payload = self._build_downlink_payload(screen_off=minutes)
+            await self.mqtt_source.async_send_downlink(payload)
+        else:
+            _LOGGER.debug("Setting screen-off timer to %d via Bluetooth", minutes)
+            await self._send_command(protocol.set_screen_off(minutes))
         self.data["screen_off"] = minutes
         self.async_update_listeners()
 

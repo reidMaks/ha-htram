@@ -292,9 +292,51 @@ async def test_readings_survive_losing_bluetooth(
         )
         assert hass.states.get(co2_alarm).state == "off"
 
-        # What genuinely needs the radio (controls) says so.
+        # With MQTT available and fresh, controls remain available via MQTT downlink.
         switch = registry.async_get_entity_id("switch", DOMAIN, f"{ADDRESS}_mute")
+        assert hass.states.get(switch).state == "off"
+
+        # If MQTT also becomes stale, controls go unavailable without Bluetooth.
+        import time
+
+        entry.runtime_data._mqtt_last_seen = time.monotonic() - 301
+        entry.runtime_data.async_update_listeners()
+        await hass.async_block_till_done()
         assert hass.states.get(switch).state == "unavailable"
+    finally:
+        ble_reachable = True
+
+
+async def test_control_via_mqtt_downlink(
+    hass: HomeAssistant, custom_integration, ble_device, mqtt_mock
+):
+    """When MQTT is available, controls publish to D/<serial> without Bluetooth."""
+    global ble_reachable
+    ble_reachable = False  # Bluetooth completely unreachable!
+
+    try:
+        await setup_entry(
+            hass, ble_device, options={CONF_MQTT_ENABLED: True, CONF_SERIAL: SERIAL}
+        )
+        async_fire_mqtt_message(hass, TOPIC, PAYLOAD)
+        await hass.async_block_till_done()
+
+        registry = er.async_get(hass)
+        switch = registry.async_get_entity_id("switch", DOMAIN, f"{ADDRESS}_mute")
+        assert hass.states.get(switch).state == "off"
+
+        # Toggling mute should send 31-byte frame to D/RM1221412257
+        await hass.services.async_call(
+            "switch", "turn_on", {"entity_id": switch}, blocking=True
+        )
+
+        mqtt_mock.async_publish.assert_called()
+        call_args = mqtt_mock.async_publish.call_args
+        assert call_args[0][0] == f"D/{SERIAL}"
+        payload = call_args[0][1]
+        assert len(payload) == 31
+        assert payload.startswith(b"DC\x00\x02\x00\x04")
+        assert hass.states.get(switch).state == "on"
     finally:
         ble_reachable = True
 

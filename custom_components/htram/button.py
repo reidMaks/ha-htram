@@ -25,9 +25,15 @@ class HTRAMSyncTimeButton(HtramBluetoothEntity, ButtonEntity):
         self._attr_unique_id = f"{coordinator.address}_sync_time"
         self._attr_icon = "mdi:clock-sync"
 
+    @property
+    def available(self) -> bool:
+        """Time sync is only supported over Bluetooth."""
+        return self.coordinator.last_update_success and self.coordinator.ble_ok
+
     async def async_press(self) -> None:
         """Handle the button press."""
         await self.coordinator.async_sync_time()
+
 
 
 class HTRAMBleSessionButton(HtramEntity, ButtonEntity):

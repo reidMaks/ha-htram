@@ -36,15 +36,18 @@ class HtramEntity(CoordinatorEntity[HTRAMDataUpdateCoordinator]):
 
 
 class HtramBluetoothEntity(HtramEntity):
-    """For entities only Bluetooth can drive.
+    """For entities controllable over MQTT or Bluetooth.
 
-    The controls (mute, alarm thresholds, screen-off, temperature unit) have
-    no MQTT equivalent: downlink is unsupported by the firmware. When the
-    radio is gone these report unavailable on their own, while the sensors,
-    battery and charging carry on from MQTT.
+    When MQTT is available (connected and telemetry is fresh), commands are
+    sent via MQTT downlink on D/<serial> without requiring Bluetooth. If MQTT
+    is unavailable or disabled, control falls back to Bluetooth and requires
+    an active session.
     """
 
     @property
     def available(self) -> bool:
-        """Whether Bluetooth reached the device on the last attempt."""
-        return super().available and self.coordinator.ble_ok
+        """Whether the entity can accept commands."""
+        if not super().available:
+            return False
+        return self.coordinator.mqtt_control_available or self.coordinator.ble_ok
+

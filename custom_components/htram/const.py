@@ -21,9 +21,10 @@ POLL_INTERVAL = 60
 # released and telemetry resumes, in seconds.
 BLE_SESSION_DURATION = 300
 
-# Telemetry topics. The device publishes on C/ and subscribes on D/, using its
-# serial number as both the client id and the topic suffix.
+# Telemetry and downlink topics. The device publishes on C/ and subscribes on D/,
+# using its serial number as both the client id and the topic suffix.
 TELEMETRY_TOPIC = "C/{serial}"
+DOWNLINK_TOPIC = "D/{serial}"
 
 # Options keys.
 CONF_MQTT_ENABLED = "mqtt_enabled"
