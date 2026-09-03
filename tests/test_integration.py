@@ -361,3 +361,74 @@ async def test_polling_stays_frequent_without_mqtt(
 ):
     entry = await setup_entry(hass, ble_device)
     assert entry.runtime_data.update_interval.total_seconds() == 60
+
+
+async def test_screen_off_not_unknown_on_init(
+    hass: HomeAssistant, custom_integration, ble_device, mqtt_mock
+):
+    """Screen-off select must never initialize as unknown."""
+    global ble_reachable
+    ble_reachable = False  # BLE unavailable on startup
+    try:
+        await setup_entry(
+            hass, ble_device, options={CONF_MQTT_ENABLED: True, CONF_SERIAL: SERIAL}
+        )
+        async_fire_mqtt_message(hass, TOPIC, PAYLOAD)
+        await hass.async_block_till_done()
+
+        registry = er.async_get(hass)
+        screen_off = registry.async_get_entity_id(
+            "select", DOMAIN, f"{ADDRESS}_screen_off"
+        )
+        assert screen_off is not None
+        state = hass.states.get(screen_off)
+        assert state is not None
+        assert state.state in ("Always On", "Auto Off (2 min)")
+        assert state.state != "unknown"
+    finally:
+        ble_reachable = True
+
+
+async def test_changing_threshold_preserves_screen_off(
+    hass: HomeAssistant, custom_integration, ble_device, mqtt_mock
+):
+    """Changing CO2 thresholds must preserve existing screen-off selection."""
+    global ble_reachable
+    ble_reachable = False
+    try:
+        await setup_entry(
+            hass, ble_device, options={CONF_MQTT_ENABLED: True, CONF_SERIAL: SERIAL}
+        )
+        async_fire_mqtt_message(hass, TOPIC, PAYLOAD)
+        await hass.async_block_till_done()
+
+        registry = er.async_get(hass)
+        screen_off_id = registry.async_get_entity_id(
+            "select", DOMAIN, f"{ADDRESS}_screen_off"
+        )
+        low_id = registry.async_get_entity_id(
+            "number", DOMAIN, f"{ADDRESS}_alarm_low"
+        )
+
+        # User selects Auto Off (2 min)
+        await hass.services.async_call(
+            "select",
+            "select_option",
+            {"entity_id": screen_off_id, "option": "Auto Off (2 min)"},
+            blocking=True,
+        )
+        assert hass.states.get(screen_off_id).state == "Auto Off (2 min)"
+
+        # User changes low threshold
+        await hass.services.async_call(
+            "number",
+            "set_value",
+            {"entity_id": low_id, "value": 700},
+            blocking=True,
+        )
+
+        # Screen-off select must NOT reset to Always On!
+        assert hass.states.get(screen_off_id).state == "Auto Off (2 min)"
+    finally:
+        ble_reachable = True
+

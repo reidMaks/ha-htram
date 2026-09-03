@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
@@ -35,7 +36,7 @@ class HtramEntity(CoordinatorEntity[HTRAMDataUpdateCoordinator]):
         )
 
 
-class HtramBluetoothEntity(HtramEntity):
+class HtramBluetoothEntity(HtramEntity, RestoreEntity):
     """For entities controllable over MQTT or Bluetooth.
 
     When MQTT is available (connected and telemetry is fresh), commands are

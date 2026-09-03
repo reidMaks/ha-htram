@@ -15,7 +15,7 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
     async_add_entities([HTRAMSyncTimeButton(coordinator), HTRAMBleSessionButton(coordinator)])
 
-class HTRAMSyncTimeButton(HtramBluetoothEntity, ButtonEntity):
+class HTRAMSyncTimeButton(HtramEntity, ButtonEntity):
     """Representation of HTRAM Time Sync Button."""
 
     def __init__(self, coordinator: HTRAMDataUpdateCoordinator) -> None:

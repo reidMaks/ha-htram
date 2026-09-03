@@ -30,6 +30,18 @@ class HTRAMTempUnitSelect(HtramBluetoothEntity, SelectEntity):
         self._attr_options = ["Celsius", "Fahrenheit"]
         self._attr_icon = "mdi:thermometer-cog"
 
+    async def async_added_to_hass(self) -> None:
+        """Restore state if coordinator does not have settings from Bluetooth."""
+        await super().async_added_to_hass()
+        if not self.coordinator.ble_ok or "temp_unit" not in self.coordinator.data:
+            if (last_state := await self.async_get_last_state()) is not None:
+                if last_state.state == "Fahrenheit":
+                    self.coordinator.data["temp_unit"] = "F"
+                elif last_state.state == "Celsius":
+                    self.coordinator.data["temp_unit"] = "C"
+            if "temp_unit" not in self.coordinator.data:
+                self.coordinator.data["temp_unit"] = "C"
+
     @property
     def current_option(self) -> str | None:
         """Return the current option."""
@@ -40,6 +52,7 @@ class HTRAMTempUnitSelect(HtramBluetoothEntity, SelectEntity):
         """Change the selected option."""
         is_c = option == "Celsius"
         await self.coordinator.async_set_temp_unit(is_c)
+
 
 class HTRAMScreenOffSelect(HtramBluetoothEntity, SelectEntity):
     """Representation of HTRAM Screen Off Select."""
@@ -52,21 +65,26 @@ class HTRAMScreenOffSelect(HtramBluetoothEntity, SelectEntity):
         self._attr_options = ["Always On", "Auto Off (2 min)"]
         self._attr_icon = "mdi:monitor-off"
 
+    async def async_added_to_hass(self) -> None:
+        """Restore state if coordinator does not have settings from Bluetooth."""
+        await super().async_added_to_hass()
+        if not self.coordinator.ble_ok or "screen_off" not in self.coordinator.data:
+            if (last_state := await self.async_get_last_state()) is not None:
+                if last_state.state == "Auto Off (2 min)":
+                    self.coordinator.data["screen_off"] = 120
+                elif last_state.state == "Always On":
+                    self.coordinator.data["screen_off"] = 0
+            if "screen_off" not in self.coordinator.data:
+                self.coordinator.data["screen_off"] = 0
+
     @property
     def current_option(self) -> str | None:
         """Return the current option."""
-        # Value from coordinator is int (minutes or seconds?)
-        # Java uses 120 (seconds?) for Auto Off, 0 for Always On.
-        # Coordinator reads value from device.
-        if "screen_off" not in self.coordinator.data:
-            return None
-            
-        val = self.coordinator.data["screen_off"]
-        # Assuming 0 is Always On, anything else is Auto Off (usually 120)
+        val = self.coordinator.data.get("screen_off", 0)
         return "Always On" if val == 0 else "Auto Off (2 min)"
 
     async def async_select_option(self, option: str) -> None:
         """Change the selected option."""
-        # Map option to value
         val = 0 if option == "Always On" else 120
         await self.coordinator.async_set_screen_off(val)
+

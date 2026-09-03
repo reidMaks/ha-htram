@@ -27,16 +27,24 @@ class HTRAMMuteSwitch(HtramBluetoothEntity, SwitchEntity):
         self._attr_unique_id = f"{coordinator.address}_mute"
         self._attr_icon = "mdi:volume-off"
 
+    async def async_added_to_hass(self) -> None:
+        """Restore state if coordinator does not have settings from Bluetooth."""
+        await super().async_added_to_hass()
+        if not self.coordinator.ble_ok or "mute" not in self.coordinator.data:
+            if (last_state := await self.async_get_last_state()) is not None:
+                if last_state.state == "on":
+                    self.coordinator.data["mute"] = True
+                elif last_state.state == "off":
+                    self.coordinator.data["mute"] = False
+            if "mute" not in self.coordinator.data:
+                self.coordinator.data["mute"] = False
+
     @property
     def is_on(self) -> bool:
         """Return true if switch is on.
         Note: Switch ON means MUTE IS ACTIVE (Silent).
         Switch OFF means MUTE IS INACTIVE (Sound is ON).
-        Wait, standard UX: "Mute" switch ON = No Sound.
         """
-        # data["mute"] is boolean (True = Muted/Off, False = On)
-        # Verify coordinator logic: `is_off = data[9] == 0`. 
-        # App shows "Mute State" switch. If switch is ON -> Mute is ON (Sound OFF).
         return self.coordinator.data.get("mute", False)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
