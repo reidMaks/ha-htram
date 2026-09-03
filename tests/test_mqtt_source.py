@@ -32,6 +32,7 @@ def coordinator(monkeypatch):
     coord.data = {}
     coord.mqtt_enabled = False
     coord._mqtt_last_seen = None
+    coord._session_release = None
     coord.async_set_updated_data = MagicMock()
     return coord
 
@@ -273,3 +274,31 @@ def test_bluetooth_failure_still_fails_without_mqtt(coordinator):
     coordinator.mqtt_enabled = False
     with pytest.raises(UpdateFailed):
         coordinator._tolerate_ble_failure("not advertising")
+
+
+async def test_ble_session_lifecycle(coordinator, monkeypatch):
+    """Explicit Bluetooth session holds and releases link."""
+    from unittest.mock import AsyncMock
+    import htram.coordinator as mod
+
+    coordinator.address = "94:E6:86:94:36:B2"
+    coordinator.ble_ok = True
+    coordinator.async_refresh = AsyncMock()
+    coordinator.async_update_listeners = MagicMock()
+    coordinator._cleanup_client = AsyncMock()
+    coordinator.hass = MagicMock()
+
+    timer_handle = MagicMock()
+    monkeypatch.setattr(
+        mod, "async_call_later", lambda hass, delay, cb: timer_handle
+    )
+
+    await coordinator.async_start_ble_session()
+    assert coordinator._session_release is timer_handle
+
+    await coordinator.async_end_ble_session()
+    assert coordinator._session_release is None
+    assert coordinator.ble_ok is False
+    timer_handle.assert_called_once()
+    coordinator._cleanup_client.assert_awaited_once()
+

@@ -64,6 +64,7 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         self.data = {}
         self._client = None
         self.ble_ok = False
+        self._session_release = None
 
         # Set by __init__.py from the config entry options. When telemetry is
         # arriving over MQTT the Bluetooth poll skips the realtime request,
@@ -105,7 +106,7 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         self.async_update_listeners()
 
     def _cancel_session_release(self) -> None:
-        if self._session_release is not None:
+        if getattr(self, "_session_release", None) is not None:
             self._session_release()
             self._session_release = None
 
@@ -297,7 +298,7 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
                 # resumes. Confirmed on hardware: of three provisioned
                 # monitors, the one holding a Bluetooth connection was the one
                 # publishing nothing.
-                if self.mqtt_enabled and self._session_release is None:
+                if self.mqtt_enabled and getattr(self, "_session_release", None) is None:
                     await self._cleanup_client()
 
                 # If we had a timeout on realtime data, our connection might be bad.
