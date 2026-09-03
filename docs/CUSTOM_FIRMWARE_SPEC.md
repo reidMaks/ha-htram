@@ -206,3 +206,51 @@ ESP32 бере на себе 90% функціоналу системи:
 2. **Призначення кнопки на корпусі:** Чи хочемо використовувати фізичну кнопку на корпусі монітора (наприклад: коротке натискання — зміна екрана/графіка, довге натискання — примусове ввімкнення/вимкнення підсвітки)?
 3. **Зовнішні дані з Home Assistant:** Чи виводити на екран вуличну температуру/погоду з вашого HA, чи залишити виключно внутрішні показники сенсорів?
 4. **Вибір GPIO для перемичок SWD:** Чи є на каштеляціях ESP32 зручні контактні площадки, які вам найлегше запаяти (наприклад `GPIO18` і `GPIO19` на правому боці модуля)?
+
+---
+
+## 10. Список джерел, дампів та супутньої документації
+
+### 10.1. Дампи пам'яті та утиліти низькорівневого доступу (в репозиторії)
+* [`tools/swd/gd32_flash.bin`](../tools/swd/gd32_flash.bin) — Повний двійковий дамп Flash-пам'яті мікроконтролера GD32F150C8T6 (64 КБ, адреси `0x08000000`..`0x0800FFFF`). Еталонна заводська прошивка Honeywell, вилучена через SWD за допомогою експлойту GigaVulnerability #2.
+* [`tools/swd/flash_dump.c`](../tools/swd/flash_dump.c) — Вихідний код низькорівневого дампа GD32 для виконання з SRAM (`0x20000000`).
+* [`tools/swd/run_flash_dump.sh`](../tools/swd/run_flash_dump.sh) — Автоматизований Bash-скрипт збірки, завантаження в SRAM через OpenOCD, скидання біта `CDBGPWRUPREQ` та вичитування пам'яті по UART.
+* [`tools/swd/capture_dump.py`](../tools/swd/capture_dump.py) — Python-утиліта захоплення потоку байтів flash через послідовний порт з верифікацією контрольних сум рядків.
+* [`tools/swd/sram.ld`](../tools/swd/sram.ld) — Лінкер-скрипт для збірки бінарників під оперативну пам'ять GD32F150 SRAM (`0x20000000`, розмір 8K).
+* [`tools/swd/README.md`](../tools/swd/README.md) — Повна документація тестових точок SWD на платі (`TP16` SWCLK, `TP17` SWDIO, GND), схема підключення Raspberry Pi Pico (CMSIS-DAP) та конфігурація OpenOCD.
+
+### 10.2. Фотографії апаратної частини (Hardware Teardown)
+* [`docs/mainboard-front.jpeg`](mainboard-front.jpeg) — Фото лицьового боку материнської плати `Storm Shadow REV3` (модуль ESP32-WROOM-32E, NDIR-сенсор CO₂, зумер `LS1`, роз'єм micro-USB, коннектор акумулятора JST).
+* [`docs/mainboard-back.jpeg`](mainboard-back.jpeg) — Фото тильного боку плати (мікроконтролер `U8` GD32F150C8T6, мікросхема Flash `U4` Winbond 25Q32, FPC-шлейф дисплея `J3`, світлодіоди `LED03`–`LED07`, тестові точки `TP1`–`TP31`).
+* [`ESP32-wroom-32-pinout-mischianti-high-resolution.png`](../ESP32-wroom-32-pinout-mischianti-high-resolution.png) — Детальна схема розпіновки та каштеляцій модуля ESP32-WROOM-32.
+
+### 10.3. Технічні звіти реверс-інжинірингу в репозиторії
+* [`tools/README.md`](../tools/README.md) — Фундаментальний звіт про дослідження заліза та протоколів:
+  * **§8a–§8c:** Аналіз прошивки ESP-AT, ліній зв'язку між процесорами (`GPIO16/17` UART1 115200) та розшифровка AT-команд.
+  * **§8f:** Повний розбір 31-байтного пакета Downlink на `D/<serial>`, розпіновка SWD, результати дизасемблювання графічного контролера та доведення відсутності іконки Wi-Fi у заводських асетах.
+* [`README.md`](../README.md) — Загальна документація інтеграції Home Assistant, опис сутностей, архітектура зв'язку та юридичний дисклеймер (Directive 2009/24/EC / DMCA 1201(f)).
+
+### 10.4. Інструменти дослідження протоколу (CLI Tools)
+* [`tools/test_downlink_mqtt.py`](../tools/test_downlink_mqtt.py) — Утиліта прямої відправки 31-байтних двійкових Downlink-пакетів через WebSocket Secure (порт 443) з перевіркою миттєвого ACK-відгуку.
+* [`tools/htram_wifi.py`](../tools/htram_wifi.py) — BLE-клієнт конфігурації Wi-Fi та MQTT-сервера.
+* [`tools/mqtt_wss.py`](../tools/mqtt_wss.py) — Автономний локальний WSS-брокер для прийому телеметрії без хмари.
+
+### 10.5. Документація виробників компонентів (Datasheets & Specs)
+* **GigaDevice GD32F150:**
+  * *GD32F150xx Datasheet* (GigaDevice Semiconductor Inc., LQFP48 pinout, electrical characteristics).
+  * *GD32F1x0 User Manual* (Детальний опис регістрів RCU, FMC Flash controller, TIMER PWM, USART, I2C, SPI).
+* **Espressif ESP32-WROOM-32E:**
+  * *ESP32-WROOM-32E & ESP32-WROOM-32UE Datasheet* (Espressif Systems, pin layout, RF characteristics).
+  * *ESP-AT User Guide / Command Reference* (Опис структури збереження параметрів у NVS `factory_param`).
+* **Дисплей ST7789VW:**
+  * *Sitronix ST7789VW 240x240 RGB TFT Controller Datasheet* (Команди `0x2A` CASET, `0x2B` RASET, `0x2C` RAMWR, `0x3A` COLMOD).
+* **Сенсор CO₂ та вологості:**
+  * *Senseair S8 LP Commercial CO₂ Sensor Datasheet & Modbus/UART Protocol*.
+  * *Sensirion SHT3x-DIS Humidity and Temperature Sensor Datasheet* (I2C адресація та розрахунок контрольної суми CRC8).
+
+### 10.6. Зовнішні відкриті проєкти та декомпільовані джерела
+* **Мобільний застосунок:** Декомпільований APK `com.honeywell.sps.airmonitor` v2.9.1 (еталонні константи протоколу, моделі пакетів BLE та MQTT, логіка хмарної реєстрації).
+* **[noname122021/honeywell-htram-v1w-ble-monitor](https://github.com/noname122021/honeywell-htram-v1w-ble-monitor):** Дослідження BLE протоколу та розбирання материнської плати.
+* **[Wyox/honeywell-htram-ble](https://github.com/Wyox/honeywell-htram-ble):** Реалізація кодека розбору BLE телеметрії на Python.
+* **[ESPHome LVGL Component Documentation](https://esphome.io/components/lvgl/):** Офіційна документація інтеграції графічного рушія LVGL в екосистему ESPHome.
+
