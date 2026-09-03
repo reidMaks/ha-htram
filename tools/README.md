@@ -868,6 +868,19 @@ The GD32F150C8T6 application MCU had Readout Protection Level 1 (RDP1) enabled. 
 * Clearing debug power released the hardware flash lock while our SRAM code continued running uninterrupted.
 * The SRAM program read all 64 KB of flash (`0x08000000`–`0x0800FFFF`) and transmitted it over USART1 PA2 at 115200 baud to `tools/swd/capture_dump.py`, producing a bit-perfect dump.
 
+#### SWD Hardware Pinout & Wiring
+
+Factory test points on the back side of the PCB (`Storm Shadow Main Board REV3`):
+
+| Test Point | GD32 Pin | MCU Net | SWD Function | Pico (CMSIS-DAP) Wire |
+|---|---|---|---|---|
+| **`TP16`** | Pin 37 | `PA14` | **SWCLK** | **GP2** (Pin 4) |
+| **`TP17`** | Pin 34 | `PA13` | **SWDIO** | **GP3** (Pin 5) |
+| **`GND`** | Pin 47 | `VSS` | **GND** | **GND** (Pin 3 / USB metal shield) |
+| — | Pin 12 | `PA2` | USART1_TX | **GP5** (Pin 7, serial logs / dump capture) |
+
+*(See [`tools/swd/README.md`](swd/README.md) for full flashing instructions, OpenOCD configuration, and unprotect commands).*
+
 ### 2. Why Earlier Downlink Attempts Failed
 
 Inspection of the `+MQTTSUBRECV` handler (`0x08008FE8`) revealed the exact reason every previous probe (§8f) failed:
