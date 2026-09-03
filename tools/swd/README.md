@@ -69,3 +69,12 @@ If you wish to flash custom firmware to the GD32:
    ```bash
    openocd -f interface/cmsis-dap.cfg -f target/stm32f1x.cfg -c "init; reset halt; flash write_image erase gd32_flash.bin 0x08000000; reset run; exit"
    ```
+
+---
+
+## 5. Research & Hardware Safety Disclaimer
+
+This hardware reverse engineering, SWD debugging, and memory dump documentation is published strictly for non-commercial educational, interoperability, and scientific research purposes (under EU Directive 2009/24/EC and 17 U.S.C. § 1201(f) fair-use / interoperability exemptions) to preserve functionality of abandoned consumer hardware.
+
+All procedures involve physical hardware interaction. Soldering, test-pad probing, and flashing carry risks of short circuits, permanent hardware damage, or lithium-ion battery hazards. All information is provided **"AS IS"** without warranties; users assume all risk and liability.
+

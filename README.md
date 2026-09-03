@@ -95,23 +95,18 @@ to avoid, and resuming it unannounced is how a working setup quietly degrades.
 | `sensor.<device>_battery_level` | " |
 | `sensor.<device>_data_source` | diagnostic: `bluetooth` or `mqtt` |
 | `binary_sensor.<device>_charging` | MQTT when enabled, otherwise Bluetooth |
-| `switch.<device>_mute` | on means silent (Bluetooth only) |
-| `select.<device>_temperature_unit` | display only; telemetry stays Celsius (Bluetooth only) |
-| `select.<device>_screen_off_timer` | Bluetooth only |
-| `number.<device>_co2_alarm_low` | yellow threshold (Bluetooth only) |
-| `number.<device>_co2_alarm_high` | red threshold (Bluetooth only) |
+| `switch.<device>_mute` | on means silent (MQTT downlink or Bluetooth) |
+| `select.<device>_temperature_unit` | display panel only; telemetry stays Celsius (MQTT downlink or Bluetooth) |
+| `select.<device>_screen_off_timer` | MQTT downlink or Bluetooth |
+| `number.<device>_co2_alarm_low` | yellow threshold (MQTT downlink or Bluetooth) |
+| `number.<device>_co2_alarm_high` | red threshold (MQTT downlink or Bluetooth) |
 | `button.<device>_sync_time` | sets the device clock, UTC (Bluetooth only) |
+| `button.<device>_bluetooth_session` | opens a 5-minute Bluetooth window for manual diagnostics |
 
 There is also a `htram.configure_device` service, which provisions a targeted
 monitor without going through the options dialog.
 
 ## Known limitations
-
-**Control is Bluetooth-only.** The device subscribes to a downlink topic and
-the vendor's web portal used it to mute devices remotely, but its payload
-format was not cracked — eighteen candidates were delivered to the device and
-ignored. §8f of [tools/README.md](tools/README.md) records what was tried, so
-nobody repeats it.
 
 **Battery is reported in bars**, 0 to 4, and shown as 0/25/50/75/100 %.
 
@@ -120,16 +115,9 @@ sensor warms up the device reports CO2 65534, temperature 0x81 and humidity
 0xFE -- which decode to 65534 ppm, -127 C and 254 % if taken at face value. All
 three are dropped and the sensors read unavailable until real numbers arrive.
 
-**Restarting Home Assistant does not restore Bluetooth by itself.** If the
-integration does not reconnect while the device is still advertising, the
-window closes and the button has to be pressed. This is why the MQTT path
-exists: telemetry survives a restart without any of that.
-
-**With MQTT configured, losing Bluetooth costs only the controls.** The
-readings, battery level and charging flag keep arriving over MQTT; only the
-buzzer switch, thresholds, screen timer, and unit selector report unavailable
-until the radio comes back. Without MQTT, Bluetooth is the only source and
-the integration waits for the device instead.
+**Time synchronization requires Bluetooth.** While telemetry and settings controls
+work fully over MQTT downlink (`D/<serial>`), the hardware clock sync command
+is only accepted over BLE.
 
 ## Development
 
@@ -145,14 +133,32 @@ inside a real Home Assistant through
 Home Assistant version it targets; they must be bumped together.
 
 `tools/` holds the console programs the protocol was worked out with: a BLE
-client, a WiFi provisioner, a UART sniffer, a standalone MQTT-over-WSS broker
-and a telemetry decoder. They are independent of Home Assistant and are the
-right place to start when something needs debugging at the protocol level.
+client, a WiFi provisioner, a UART sniffer, a standalone MQTT-over-WSS broker,
+downlink command testing, SWD flash extractors, and a telemetry decoder. They are independent of
+Home Assistant and are the right place to start when something needs debugging at the protocol level.
 
-## Credit and disclaimer
+## Legal, Research & Safety Disclaimer
 
-The first version was reverse-engineered and written by **Antigravity (Google
-DeepMind)** with a human supervisor; the protocol work, the MQTT path and the
-Home Assistant modernisation that followed were done with **Claude**.
+### 1. Interoperability & Scientific Research Purpose
+This project is an independent, non-commercial scientific and engineering research effort aimed at achieving software interoperability, device longevity, and electronic waste reduction for abandoned hardware following the vendor's cloud service termination.
 
-Unofficial, unaffiliated with Honeywell, and used at your own risk.
+Reverse engineering of the communication protocols and firmware interfaces was conducted solely for interoperability and security analysis, in accordance with:
+* **Directive 2009/24/EC** of the European Parliament and of the Council (specifically Articles 5(3) and 6 regarding reverse engineering and decompilation for interoperability).
+* **17 U.S.C. § 1201(f)** of the United States Code (Digital Millennium Copyright Act Reverse Engineering / Interoperability Exception).
+* Applicable **Right to Repair** and fair use principles regarding consumer-owned hardware.
+
+### 2. Trademark & Non-Affiliation Notice
+This project is completely unofficial and is **not** endorsed, sponsored, certified, or affiliated with **Honeywell International Inc.**, **GigaDevice Semiconductor**, **Espressif Systems**, or any of their subsidiaries or affiliates. All product names, trademarks, logos, and registered trademarks referenced herein are the property of their respective owners and are used solely for descriptive and identification purposes.
+
+### 3. Clean-Room & Content Distribution
+This repository contains original open-source integration code, clean-room protocol specifications, and hardware documentation. It **does not** host, redistribute, or license any proprietary vendor firmware binaries, copyrighted graphic assets, or private cryptographic keys.
+
+### 4. Hardware Safety & Limitation of Liability
+All software, scripts, hardware pinouts, and instructions are provided **"AS IS"**, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE. 
+
+Physical hardware modifications, test-point soldering, SWD programming, or custom firmware flashing carry inherent risks of electrical shock, component damage, short circuits, or battery hazards. The authors and contributors assume **no liability whatsoever** for damaged hardware, bricked devices, personal injury, voided warranties, or data loss resulting from the use of this project. Proceed at your own risk.
+
+## Credit
+
+The initial BLE integration was reverse-engineered and written by **Antigravity (Google
+DeepMind)** with human supervision; the protocol work, MQTT telemetry, and initial HA modernisation were developed with **Claude**; the complete downlink command specification, SWD hardware exploitation (RDP1 bypass), flash analysis, dual MQTT/BLE control architecture, and state persistence were reverse-engineered and completed by **Antigravity (Google DeepMind)**.
