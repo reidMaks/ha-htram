@@ -367,7 +367,10 @@ def test_coordinator_downlink_builder(coordinator):
     assert int.from_bytes(payload[21:23], "little") == 1
     # Temp unit: 1 (F)
     assert int.from_bytes(payload[23:25], "little") == 1
-    # Buzzer: 0 (since mute=False)
+    # Buzzer: 1 (since mute=False -> sound enabled)
+    assert int.from_bytes(payload[25:27], "little") == 1
+    # Screen power: 0 (screen stays on)
     assert int.from_bytes(payload[27:29], "little") == 0
+
 
 

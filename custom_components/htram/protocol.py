@@ -453,8 +453,8 @@ def build_downlink_settings(
     brightness: int = 100,
     auto_off: int = 0,
     temp_unit: int = 0,
-    screen_on: int = 1,
-    buzzer: int = 0,
+    buzzer: int = 1,
+    screen_power: int = 0,
     transaction_id: int | None = None,
     sku: bytes = b"\x51\x06",
 ) -> bytes:
@@ -471,8 +471,8 @@ def build_downlink_settings(
         [19:21] Brightness (uint16 LE, 0..100)
         [21:23] Auto screen-off timeout (uint16 LE: 0 = Always ON, 1 = 2 min)
         [23:25] Temperature unit (uint16 LE: 0 = Celsius, 1 = Fahrenheit)
-        [25:27] Screen display (uint16 LE: 1 = ON, 0 = OFF)
-        [27:29] Buzzer mute (uint16 LE: 0 = Sound ON / Alert, 1 = Muted)
+        [25:27] Buzzer (uint16 LE: 1 = Sound ON / Alert, 0 = Muted)
+        [27:29] Screen display (uint16 LE: 0 = ON, 1 = OFF)
         [29:31] CRC-16 over [15:29] (uint16 LE)
     """
     if transaction_id is None:
@@ -491,8 +491,8 @@ def build_downlink_settings(
     body.extend(struct.pack("<H", brightness))
     body.extend(struct.pack("<H", auto_off))
     body.extend(struct.pack("<H", temp_unit))
-    body.extend(struct.pack("<H", screen_on))
     body.extend(struct.pack("<H", buzzer))
+    body.extend(struct.pack("<H", screen_power))
 
     chk = struct.pack("<H", crc16(body))
     frame = bytes(header + body + chk)

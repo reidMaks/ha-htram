@@ -303,8 +303,8 @@ def test_build_downlink_settings():
         brightness=100,
         auto_off=0,
         temp_unit=0,
-        screen_on=1,
-        buzzer=0,
+        buzzer=1,
+        screen_power=0,
         transaction_id=0x12345678,
     )
     assert len(frame) == 31

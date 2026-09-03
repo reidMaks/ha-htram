@@ -405,7 +405,7 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         high: int | None = None,
         screen_off: int | None = None,
         temp_unit_c: bool | None = None,
-        screen_on: bool | None = None,
+        screen_power_off: bool | None = None,
         mute: bool | None = None,
     ) -> bytes:
         """Build a 31-byte downlink packet reflecting current and requested states."""
@@ -422,16 +422,20 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
             is_c = self.data.get("temp_unit", "C") == "C"
         temp_unit = 0 if is_c else 1
 
-        if screen_on is not None:
-            disp = 1 if screen_on else 0
-        else:
-            disp = 1 if self.data.get("screen_on", True) else 0
-
         if mute is not None:
             is_muted = mute
         else:
             is_muted = self.data.get("mute", False)
-        buzzer = 1 if is_muted else 0
+        # In GD32 [25:27]: 1 = Sound ON (Buzzer enabled), 0 = Sound Muted
+        buzzer = 0 if is_muted else 1
+
+        # In GD32 [27:29]: 0 = Screen ON, 1 = Screen OFF
+        if screen_power_off is not None:
+            screen_power = 1 if screen_power_off else 0
+        elif screen_off is not None and screen_off != 0:
+            screen_power = 1
+        else:
+            screen_power = 0
 
         brightness = self.data.get("brightness", 100)
 
@@ -441,8 +445,8 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
             brightness=brightness,
             auto_off=auto_off,
             temp_unit=temp_unit,
-            screen_on=disp,
             buzzer=buzzer,
+            screen_power=screen_power,
         )
 
     async def async_set_mute(self, mute: bool) -> None:

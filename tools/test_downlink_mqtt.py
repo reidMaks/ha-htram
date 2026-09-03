@@ -39,8 +39,8 @@ def build_downlink_frame(
     brightness: int = 100,   # [19:21] Brightness: 0..100 %
     auto_off: int = 0,       # [21:23] Auto screen-off: 0 = Always ON, 1 = 2 min timeout
     temp_unit: int = 0,      # [23:25] Temp unit: 0 = C, 1 = F
-    screen_on: int = 1,      # [25:27] Screen display: 1 = ON, 0 = OFF (Turn Off Display)
-    buzzer: int = 0,         # [27:29] Buzzer: 0 = Sound ON, 1 = Mute
+    buzzer: int = 1,         # [25:27] Buzzer: 1 = Sound ON, 0 = Mute
+    screen_power: int = 0,   # [27:29] Screen: 0 = Screen ON, 1 = Screen OFF
     transaction_id: int | None = None,
     sku: bytes = b"\x51\x06",
 ) -> bytes:
@@ -60,8 +60,8 @@ def build_downlink_frame(
     body += struct.pack("<H", brightness)        # [19:21] Brightness (0..100%)
     body += struct.pack("<H", auto_off)          # [21:23] Auto screen-off (0=always on, 1=2min)
     body += struct.pack("<H", temp_unit)         # [23:25] Temp unit: 0=C, 1=F
-    body += struct.pack("<H", screen_on)         # [25:27] Screen: 1=ON, 0=OFF
-    body += struct.pack("<H", buzzer)            # [27:29] Buzzer: 0=Sound ON, 1=Mute
+    body += struct.pack("<H", buzzer)            # [25:27] Buzzer: 1=Sound ON, 0=Mute
+    body += struct.pack("<H", screen_power)      # [27:29] Screen: 0=ON, 1=OFF
 
     chk = struct.pack("<H", crc16(body))         # [29:31] CRC-16
 
@@ -133,8 +133,8 @@ def main():
     parser.add_argument("--unit", choices=["C", "F"], default="C", help="Temperature unit (C or F)")
     parser.add_argument("--brightness", type=int, default=100, help="Brightness (0..100 percent)")
     parser.add_argument("--auto-off", type=int, choices=[0, 1], default=0, help="Auto screen off (0 = always on, 1 = 2 min timeout)")
-    parser.add_argument("--buzzer", type=int, choices=[0, 1], default=0, help="Buzzer (0=On, 1=Mute)")
-    parser.add_argument("--screen-on", type=int, choices=[0, 1], default=1, help="Screen State: 1 = ON, 0 = OFF (Turn Off Display)")
+    parser.add_argument("--buzzer", type=int, choices=[0, 1], default=1, help="Buzzer (1 = Sound ON, 0 = Mute)")
+    parser.add_argument("--screen-power", type=int, choices=[0, 1], default=0, help="Screen Power: 0 = ON, 1 = OFF (Sleep)")
     parser.add_argument("--low", type=int, default=800, help="Low CO2 alarm threshold")
     parser.add_argument("--high", type=int, default=1000, help="High CO2 alarm threshold")
     args = parser.parse_args()
@@ -143,10 +143,9 @@ def main():
 
     print(f"Connecting to {args.broker}:{args.port} (SNI: {args.sni})...")
     s = ws_connect(args.broker, args.port, args.sni)
-    print("WebSocket connected!")
 
-    # MQTT Connect packet
-    cid = mqtt_encode_str("downlink-tool")
+    # MQTT CONNECT
+    cid = mqtt_encode_str("test-downlink-sender")
     user = mqtt_encode_str("ha-bridge")
     pwd = mqtt_encode_str("x")
     var_hdr = b"\x00\x04MQTT\x04\xc2" + struct.pack(">H", 60)
@@ -170,14 +169,14 @@ def main():
         brightness=args.brightness,
         auto_off=args.auto_off,
         temp_unit=unit_val,
-        screen_on=args.screen_on,
         buzzer=args.buzzer,
+        screen_power=args.screen_power,
     )
 
     print("\n" + "=" * 60)
     print(f"Target:       {args.target}")
     print(f"Downlink topic: {d_topic}")
-    print(f"Parameters:   Brightness={args.brightness}%, AutoOff={args.auto_off}, Unit={args.unit}, ScreenOn={args.screen_on}, Buzzer={args.buzzer}, Low={args.low}, High={args.high}")
+    print(f"Parameters:   Brightness={args.brightness}%, AutoOff={args.auto_off}, Unit={args.unit}, Buzzer={args.buzzer}, ScreenPower={args.screen_power}, Low={args.low}, High={args.high}")
     print(f"Payload (31B): {frame.hex(' ')}")
     print("=" * 60 + "\n")
 

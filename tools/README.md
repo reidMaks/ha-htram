@@ -891,8 +891,8 @@ Published to `D/<serial>` over MQTT WSS (port 443):
 | `[19:21]` | **Brightness** | uint16 LE | Backlight PWM base parameter (`0`..`100`%) |
 | `[21:23]` | **Auto Screen-Off** | uint16 LE | `0` = Always ON, `1` = 2-minute timeout |
 | `[23:25]` | **Temperature Unit**| uint16 LE | `0` = °C, `1` = °F |
-| `[25:27]` | **Screen Power** | uint16 LE | `1` = Display ON, `0` = Turn Off Display immediately |
-| `[27:29]` | **Buzzer / Mute** | uint16 LE | `0` = Sound ON / Alert active, `1` = Muted |
+| `[25:27]` | **Buzzer / Mute** | uint16 LE | `1` = Sound ON / Alert active, `0` = Muted |
+| `[27:29]` | **Screen Power** | uint16 LE | `0` = Display ON / Keep awake, `1` = Sleep / Turn Off Display |
 | `[29:31]` | **CRC-16-CCITT** | uint16 LE | Polynomial `0x1021`, init `0x0000`, over `[15:29]` (14B) |
 
 ### 4. Instant 15-Byte ACK Uplink
