@@ -29,7 +29,8 @@ Using a standard Raspberry Pi Pico running [picoprobe / debugprobe](https://gith
 | **GP2** (Pin 4) | SWCLK | **`TP16`** | GD32 PA14 (SWCLK) |
 | **GP3** (Pin 5) | SWDIO | **`TP17`** | GD32 PA13 (SWDIO) |
 | **GND** (Pin 3, 8, etc.) | Ground | **`GND`** | USB shield / Ground pad |
-| **GP5** (Pin 7, Optional) | UART RX | **`PA2`** (Pin 12) | GD32 USART1_TX (115200 baud for serial logs/dump) |
+| **GP5** (Pin 7, Optional) | UART RX | **ESP32 Pin 25 (`GPIO16` / `RXD2`)** | Inter-chip UART line (connected to GD32 `PA2` / USART1_TX). Used for capturing flash dump at 115200 baud. |
+
 
 ---
 

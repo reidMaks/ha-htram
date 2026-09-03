@@ -877,7 +877,7 @@ Factory test points on the back side of the PCB (`Storm Shadow Main Board REV3`)
 | **`TP16`** | Pin 37 | `PA14` | **SWCLK** | **GP2** (Pin 4) |
 | **`TP17`** | Pin 34 | `PA13` | **SWDIO** | **GP3** (Pin 5) |
 | **`GND`** | Pin 47 | `VSS` | **GND** | **GND** (Pin 3 / USB metal shield) |
-| — | Pin 12 | `PA2` | USART1_TX | **GP5** (Pin 7, serial logs / dump capture) |
+| — | Pin 12 | `PA2` (to **ESP32 Pin 25 / `GPIO16` `RXD2`**) | USART1_TX | **GP5** (Pin 7, serial logs / dump capture) |
 
 *(See [`tools/swd/README.md`](swd/README.md) for full flashing instructions, OpenOCD configuration, and unprotect commands).*
 
