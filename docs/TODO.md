@@ -1,0 +1,203 @@
+# HTRAM — TODO / залишок робіт
+
+Статус на 2026-09-04. Пристрій піднімається з холодного старту: дисплей, ESP,
+сенсори, батарея — усе працює (див. [GD32_HARDWARE_MAP §6.9](GD32_HARDWARE_MAP.md)).
+Наша GD32-прошивка в `main` (не пушено). ESP поки на **стоковому ESPHome** —
+з GD32 ще не спілкується.
+
+Легенда пріоритетів: 🔴 блокер / фундамент · 🟡 функціонал · 🟢 доробки.
+
+Загальний інструментарій: заливка GD32 — [`tools/swd/flash.py`](../tools/swd/flash.py)
+(`.venv/bin/python tools/swd/flash.py`), SRAM-проби й діагностика —
+[`tools/bench.py`](../tools/bench.py), відкат до заводської — `flash.py --factory`,
+доки заліза — [GD32_HARDWARE_MAP.md](GD32_HARDWARE_MAP.md), специфікація —
+[CUSTOM_FIRMWARE_SPEC.md](CUSTOM_FIRMWARE_SPEC.md), стендові процедури —
+[BENCH.md](BENCH.md).
+
+---
+
+## 1. 🔴 PLL 72 МГц + рекалібрування таймінгів
+
+**Що:** чіп працює на IRC8M 8 МГц; закладено 72 МГц. Усі софт-затримки
+([`delay_us`/`delay_ms`/`delay_cycles`](../firmware/gd32/inc/gd32f150.h)) і все
+бітбенг-тактування (зумер, дисплей, I2C) відкалібровані під 8 МГц. Треба підняти
+PLL до 72 МГц і перерахувати `SYSTEM_CLOCK_HZ` + усі затримки.
+
+**Чому фундамент:** блокує (а) коректну частоту зумера (зараз чути лише один біп —
+друга частота вилітає за діапазон п'єзо), (б) UART 921600 бод до ESP, без якого
+`DRAW_RECT`/піксельний канал нежиттєздатні (§2, §4).
+
+**Очікуваний результат:** `RCU` налаштований на PLL×9 від IRC8M/2 (або HXTAL,
+якщо розведено) = 72 МГц; `SYSTEM_CLOCK_HZ=72000000`; `USART1_BAUD` перерахований;
+зумер видає задані частоти (перевірити 1000/2500 Гц на слух), дисплей і SHT30
+читаються стабільно на новій швидкості; телеметрія й приймання не деградували.
+
+**Файли/доки:** [`firmware/gd32/inc/gd32f150.h`](../firmware/gd32/inc/gd32f150.h)
+(RCU_CTL/CFG0, delay_*), [`firmware/gd32/src/periph.c`](../firmware/gd32/src/periph.c)
+(`periph_beep`), [`firmware/gd32/src/display.c`](../firmware/gd32/src/display.c),
+[`firmware/gd32/src/sensors.c`](../firmware/gd32/src/sensors.c),
+`GD32F150xx Datasheet Rev4.0.pdf` (розділ RCU). **Інструмент:** `flash.py`,
+`tools/bench.py` для стендової перевірки таймінгів SRAM-пробою.
+
+**Ризик:** зміна торкається кожного модуля — після PLL перевірити геть усе.
+Робити на підключеному живленні + Pico (реальна швидкість != під відладчиком у SRAM).
+
+---
+
+## 2. 🔴 Power-off / standby як стан прошивки
+
+**Що:** реалізувати правильне «вимкнення» — GD32 лишається живим (він на
+always-on домені), гасить периферію (`PF7`/`PB3` low, дисплей у режим індикатора
+батареї, LED off, сенсори/буст off), і стежить за кнопкою для повторного
+ввімкнення. **Не** обрив DC-DC (спроба з `PC15` відкочена — див. коміт `4dcb14c`).
+
+**Чому:** заводська так і робить (індикатор батареї при «вимкненому»); наша
+прошивка зараз стартує одразу в «on». Це те, чого чекає користувач від кнопки.
+
+**Очікуваний результат:** утримання кнопки ~3с у стані «on» → перехід у standby
+(екран показує лише великий індикатор батареї/заряду, ESP/сенсори знеструмлені,
+`PF7`=low); утримання у standby → повне ввімкнення. Пристрій не зависає, SWD
+лишається живим. Звірити послідовність зі станом заводської (читати живі GPIO
+standby через SWD — метод §6.9).
+
+**Файли/доки:** [`firmware/gd32/src/main.c`](../firmware/gd32/src/main.c)
+(цикл+кнопка), [`firmware/gd32/src/periph.c`](../firmware/gd32/src/periph.c),
+[GD32_HARDWARE_MAP §6.6/§6.9](GD32_HARDWARE_MAP.md),
+[CUSTOM_FIRMWARE_SPEC §9.8](CUSTOM_FIRMWARE_SPEC.md). **Інструмент:** `flash.py`,
+`flash.py --factory` для зчитування еталонної standby-послідовності.
+
+---
+
+## 3. 🔴 UART-протокол на боці ESPHome (GD32 ↔ ESP)
+
+**Що:** стоковий ESPHome нічого не шле в GD32 (тому `rx_head=0` — норма). Додати
+в конфіг ESP компонент/`uart`, що: (а) парсить нашу телеметрію (`0xAA55`, тип
+0x01, CRC-16-CCITT), (б) шле downlink-команди (SET_LEDS/BACKLIGHT/BEEP/DRAW_RECT).
+
+**Очікуваний результат:** ESP на `PA2↔GPIO16`, `PA3↔GPIO17` @ 115200 (згодом
+921600) читає телеметрію GD32 у сутності HA (CO2/T/H/батарея/статус) і успішно
+надсилає команди (перевірка: BEEP/SET_LEDS змінюють стан пристрою; телеметрія
+з'являється в HA). `rx_head` на GD32 починає рости.
+
+**Файли/доки:** [`esphome/htram.yaml`](../esphome/htram.yaml),
+[`custom_components/htram/protocol.py`](../custom_components/htram/protocol.py)
+(еталон CRC/формату), [`firmware/gd32/src/protocol_engine.c`](../firmware/gd32/src/protocol_engine.c)
+та [`firmware/gd32/inc/protocol.h`](../firmware/gd32/inc/protocol.h) (формат кадрів),
+[CUSTOM_FIRMWARE_SPEC §5](CUSTOM_FIRMWARE_SPEC.md). **Інструмент:** для локальної
+перевірки протоколу без ESP — [`tools/htram_uart.py`](../tools/htram_uart.py),
+[`tools/decode_telemetry.py`](../tools/decode_telemetry.py) через Pico-міст.
+
+---
+
+## 4. 🟡 Дисплей: канал `DRAW_RECT` / UI від ESP
+
+**Що:** зараз GD32 малює власний текстовий UI (CO2/TEMP/HUM/BATT) сам. За спекою
+UI (Варіант A / LVGL) рендериться на ESP і стрімиться в GD32 як піксельні
+прямокутники (`CMD_TYPE_DRAW_RECT=0x10`). Реалізувати генерацію на ESP і перевірити
+приймач у [`protocol_engine.c`](../firmware/gd32/src/protocol_engine.c) (стан
+`STATE_PIXELS`).
+
+**Очікуваний результат:** ESP надсилає кадр/регіон, GD32 виводить його на ST7789
+без артефактів; стабільно на 921600 (потребує §1).
+
+**Файли/доки:** [CUSTOM_FIRMWARE_SPEC §4.2/§9](CUSTOM_FIRMWARE_SPEC.md),
+[`firmware/gd32/src/display.c`](../firmware/gd32/src/display.c),
+[`esphome/htram.yaml`](../esphome/htram.yaml). **Залежить від:** §1, §3.
+
+---
+
+## 5. 🟡 OTA GD32 через ESP (ROM-bootloader)
+
+**Що:** `CMD_TYPE_ENTER_BOOTLOADER=0x1F` реалізовано (стрибок у `0x1FFFEC00`), але
+не тестовано. Треба продумати: ROM-loader скидає периферію і може лишити ESP без
+живлення (рейка PB3/PF7); залив образу з ESP по `PA2/PA3` протоколом ROM-loader;
+гейти (зовнішнє живлення + заряд ≥50% за §7.3).
+
+**Очікуваний результат:** з HA/ESP команда переводить GD32 у ROM-loader, ESP
+заливає новий образ, GD32 стартує оновлену прошивку; при провалі — відкат
+зовнішнім Pico (`flash.py`). Продумати живлення ESP під час OTA.
+
+**Файли/доки:** [`firmware/gd32/src/periph.c`](../firmware/gd32/src/periph.c)
+(`system_enter_bootloader`), [CUSTOM_FIRMWARE_SPEC §3.2/§7.3/§10 Етап 3](CUSTOM_FIRMWARE_SPEC.md).
+**Страхувальний інструмент:** `tools/swd/flash.py`, дамп `tools/swd/gd32_flash.bin`.
+
+---
+
+## 6. 🟡 Логіка кнопки (short/long/very-long)
+
+**Що:** за [§9.8](CUSTOM_FIRMWARE_SPEC.md) — коротке: перемикання екранів; довге
+(~2с): підсвітка; дуже довге (~10с): скид Wi-Fi provisioning. Прикладна логіка —
+на ESP (GD32 віддає біт `STATUS_FLAG_BUTTON_PRESSED`), окрім power on/off (§2,
+живе в GD32). Розмежувати тривалості між GD32 (power) і ESP (app).
+
+**Очікуваний результат:** ESP отримує події кнопки й виконує прикладні дії; power
+on/off лишається в GD32 і не конфліктує з app-логікою.
+
+**Файли/доки:** [`firmware/gd32/src/main.c`](../firmware/gd32/src/main.c),
+[`esphome/htram.yaml`](../esphome/htram.yaml), [§9.8](CUSTOM_FIRMWARE_SPEC.md).
+
+---
+
+## 7. 🟢 Узгодити порядок полів `CMD_SET_LEDS`
+
+**Що:** код приймає `R,Y,G,Brightness`
+([`protocol_engine.c`](../firmware/gd32/src/protocol_engine.c) `STATE_TYPE`), а
+спека §5.2 описує Green/Yellow/Red. Звірити з
+[`custom_components/htram/protocol.py`](../custom_components/htram/protocol.py) і
+привести до одного порядку по всьому стеку (GD32 ↔ ESP ↔ HA).
+
+**Очікуваний результат:** команда «зелений» вмикає зелений на всіх рівнях;
+задокументовано в §5.2.
+
+---
+
+## 8. 🟢 Верифікувати біти статусу батареї/заряду
+
+**Що:** підтвердити семантику `STATUS_FLAG_USB_PRESENT`/`CHARGING` (PC13/PA15) на
+живому пристрої в різних станах (акум / USB / заряджання), і що формула батареї
+`mV=(raw*3275)>>11` тримається під навантаженням периферії (аномалія 494мВ була
+симптомом нестабільної рейки, §6.9 — переконатись, що не повертається).
+
+**Очікуваний результат:** статус-біти й напруга збігаються з реальним станом
+(звірка з референсним пристроєм по MQTT, як у §6.7).
+
+**Файли/доки:** [`firmware/gd32/src/periph.c`](../firmware/gd32/src/periph.c)
+(`periph_read_battery`), [GD32_HARDWARE_MAP §6.7](GD32_HARDWARE_MAP.md).
+**Інструмент:** `tools/swd/battery_test.c` (SRAM-проба).
+
+---
+
+## 9. 🟢 MQTT downlink-керування (відновлений формат)
+
+**Що:** використати відновлений формат `D/<serial>` (plaintext+CRC, без AES) для
+прямого керування (пороги CO2 тощо) — див. `custom_components/htram/protocol.py`
+(`crc16`, таблиця) і формат у полях `[0xf:0x1d]`.
+
+**Очікуваний результат:** публікація валідного `D/<serial>`-кадру застосовує
+пороги CO2 на пристрої; звірити семантику полів `0x15/0x17/0x19/0x1b` живцем.
+
+**Файли/доки:** [`custom_components/htram/`](../custom_components/htram/)
+(`mqtt_source.py`, `protocol.py`), [`tools/test_downlink_mqtt.py`](../tools/test_downlink_mqtt.py),
+[integration-plan.md](integration-plan.md).
+
+---
+
+## 10. 🟢 Провіжинг Wi-Fi/BLE та інтеграція HA
+
+**Що:** довести до кінця HA-інтеграцію (`custom_components/htram`) і провіжинг
+(BLE/captive-portal) за [integration-plan.md](integration-plan.md); підключення
+керування вимагає натискання кнопки на пристрої (властивість заводської).
+
+**Очікуваний результат:** пристрій провіжиниться, з'являється в HA з усіма
+сутностями (сенсори, кнопки, налаштування), керування працює.
+
+**Файли/доки:** [`custom_components/htram/`](../custom_components/htram/)
+(`config_flow.py`, `coordinator.py`), [integration-plan.md](integration-plan.md),
+[CUSTOM_FIRMWARE_SPEC §9.1](CUSTOM_FIRMWARE_SPEC.md).
+
+---
+
+### Рекомендований порядок
+`§1 (PLL)` → `§3 (ESPHome UART)` → `§2 (standby)` паралельно → далі `§4 (display)`,
+`§6 (button)`, `§5 (OTA)` → доробки `§7–§10`. §1 і §3 — фундамент, решта на них
+спирається.
