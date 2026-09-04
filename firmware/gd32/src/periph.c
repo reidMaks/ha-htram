@@ -210,3 +210,32 @@ void system_enter_bootloader(void)
         /* Should not be reached */
     }
 }
+
+void system_power_off(void)
+{
+    /* Long-press power-off. The GD32 owns the main DC-DC latch (PC15), so this
+     * has to live here, not on the ESP32 (spec §9.8 delegates only the *app*
+     * button logic — screens/backlight/provisioning — to the ESP).
+     *
+     * Stop servicing anything, then drop every rail we drive. Releasing PC15
+     * de-asserts the DC-DC enable. If the button also OR-feeds that enable in
+     * hardware (the usual soft-latch), the system stays up until the user lets
+     * go of the button and then dies; otherwise it dies immediately. Either
+     * way the outcome is the same: hold ~3 s -> off. The watchdog is not
+     * started (see main.c), so nothing re-latches PC15 behind us. */
+    __asm__ volatile("cpsid i");
+
+    GPIOB_BC = (1 << 0);   /* buzzer off (PB0) */
+    GPIOB_BC = (1 << 3);   /* peripheral power rail off (PB3) */
+
+    /* Front LEDs off, VLED anode switch (PA1) off. */
+    GPIOC_BC = (1 << 14);  /* green */
+    GPIOB_BC = (1 << 4);   /* yellow */
+    GPIOB_BC = (1 << 5);   /* red */
+    GPIOA_BC = (1 << 1);   /* VLED */
+
+    /* Release the main latch and keep it low forever. */
+    for (;;) {
+        GPIOC_BC = (1 << 15);
+    }
+}

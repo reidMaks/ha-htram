@@ -20,6 +20,12 @@
 #define GD32_UART_BAUD 115200UL
 #endif
 
+/* Loop iterations of continuous button hold that trigger power-off. Each
+ * iteration is delay_ms(5) plus work, so this is ~3-4 s of wall-clock hold --
+ * long enough to be deliberate, short enough to feel responsive. Approximate by
+ * design; tune on the bench if the feel is off. */
+#define POWEROFF_HOLD_ITERS 600U
+
 /* Format integer to string */
 static void int_to_str(int32_t val, char *buf, int is_signed)
 {
@@ -109,6 +115,7 @@ int main(void)
     uint32_t last_ui_tick = 0;
 
     int button_prev = 0;
+    uint32_t btn_hold = 0;
 
     /* Green LED ON indicating ready */
     periph_set_leds(0, 0, 1, 100);
@@ -117,11 +124,26 @@ int main(void)
         /* Process all incoming packets from ESP32 */
         protocol_process_rx();
 
-        /* Poll Button SW1 */
+        /* Poll Button SW1. A short press just chirps and is reported to the
+         * ESP32 via STATUS_FLAG_BUTTON_PRESSED (spec §9.8: app-level button
+         * logic lives on the ESP). A long hold powers the unit off -- that has
+         * to be handled here because the GD32 owns the PC15 power latch. */
         int btn = periph_read_button();
         if (btn && !button_prev) {
-            /* Button pressed */
-            periph_beep(2304, 20);
+            periph_beep(2304, 20); /* press feedback */
+        }
+        if (btn) {
+            if (btn_hold < POWEROFF_HOLD_ITERS) {
+                btn_hold++;
+                if (btn_hold == POWEROFF_HOLD_ITERS) {
+                    /* Armed: light the red LED as the shutdown cue, then drop
+                     * the power latch. system_power_off() does not return. */
+                    periph_set_leds(1, 0, 0, 100);
+                    system_power_off();
+                }
+            }
+        } else {
+            btn_hold = 0;
         }
         button_prev = btn;
 
