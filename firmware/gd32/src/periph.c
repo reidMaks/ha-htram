@@ -16,6 +16,18 @@ void periph_init(void)
     gpio_cfg_out_pp(GPIOA_BASE, 1);
     GPIOA_BOP = (1 << 1);  /* PA1 = 1 (VLED Switch Enable) */
 
+    /* PF7 = Master peripheral power enable (display panel + ESP32 rail).
+     * The factory firmware drives PF7 HIGH to power the system on; ours never
+     * enabled GPIOF at all. Masked until the first true cold boot: the display
+     * and ESP had been living off the factory-latched rail, which survived our
+     * pyocd resets but not a battery pull. Confirmed by reading the live
+     * factory GPIO state in the on state -- RCU_AHBEN PFEN set, PF7 output HIGH.
+     * The GD32 domain is always powered from the battery; PF7 gates the rest. */
+    RCU_AHBEN |= RCU_AHBEN_PFEN;
+    gpio_cfg_out_pp(GPIOF_BASE, 7);
+    GPIO_BOP(GPIOF_BASE) = (1 << 7);
+    delay_ms(20); /* let the peripheral rail settle before display/ESP init */
+
     /* 2. Front LEDs (PC14 Green, PB4 Yellow, PB5 Red) */
     gpio_cfg_out_pp(GPIOC_BASE, 14);
     gpio_cfg_out_pp(GPIOB_BASE, 4);
