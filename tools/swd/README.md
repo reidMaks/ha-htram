@@ -52,23 +52,55 @@ openocd \
 
 ## 4. Firmware Backup & Flashing
 
-### Flash Dump (Without Erasing)
-The stock firmware has Readout Protection Level 1 (RDP1) active. To safely extract the flash without triggering flash mass erase:
-* Run `./run_flash_dump.sh`.
-* It loads an SRAM payload at `0x20000000`, clears CoreSight DP register `0x4` (`CDBGPWRUPREQ`), and dumps the full 64 KB image to `gd32_flash.bin` over UART.
+> ⚠️ **OpenOCD does not work on this GD32 and pyocd's built-in flash algorithms
+> don't fit.** openocd fails target examination over SWD-only (no NRST wired; it
+> reads DBGMCU IDCODE which is blocked under RDP), and pyocd's `stm32f103rc`
+> flash algorithm overflows this chip's 8 KB SRAM. The working path is a custom
+> SRAM-resident programmer driven by `flash.py`. pyocd is used **only** with the
+> generic `cortex_m` target for `loadmem` / `reset halt`. See
+> [../../docs/GD32_HARDWARE_MAP.md](../../docs/GD32_HARDWARE_MAP.md) §6.8.
 
-### Unlocking / Flashing Custom Firmware
-If you wish to flash custom firmware to the GD32:
-1. Ensure you have backed up `gd32_flash.bin`.
-2. Remove RDP protection via OpenOCD:
-   ```bash
-   openocd -f interface/cmsis-dap.cfg -f target/stm32f1x.cfg -c "init; reset halt; stm32f1x unlock 0; reset halt; exit"
-   ```
-   *(Note: `unlock` resets option bytes and erases the chip).*
-3. Flash new or stock binary:
-   ```bash
-   openocd -f interface/cmsis-dap.cfg -f target/stm32f1x.cfg -c "init; reset halt; flash write_image erase gd32_flash.bin 0x08000000; reset run; exit"
-   ```
+### 4.1. Flash dump (without erasing) — first extraction
+The stock firmware has Readout Protection Level 1 (RDP1) active. To extract the
+flash without triggering a mass erase (PT SWARM GigaVulnerability #2):
+* Run `./run_flash_dump.sh` — it loads an SRAM stub at `0x20000000`, clears
+  CoreSight DP register `0x4` (`CDBGPWRUPREQ`) so SRAM-executed code can read
+  flash under RDP, and dumps the full 64 KB to `gd32_flash.bin` over UART.
+* Keep `gd32_flash.bin` — it is the factory restore image.
+
+### 4.2. Remove RDP (one-time, enables writing)
+```bash
+.venv/bin/pyocd cmd -t cortex_m -f 100k -c "reset halt"   # regain control if needed
+# load + run the RDP unlock stub from SRAM (erases option bytes -> RDP=0xA5):
+#   see rdp_unlock.c; applied on the next reset, which mass-erases main flash.
+```
+`rdp_unlock.c` unlocks FMC+OB, erases the option bytes to the factory default
+(software watchdog, no write-protect) and programs `RDP=0xA5`. On reset the
+hardware performs the mass erase and drops protection (`OBSTAT 0x…02 -> 0x…00`).
+
+### 4.3. Flash an image — `flash.py`
+Streaming programmer: builds `flash_writer.c` for SRAM, loads it via pyocd,
+streams the image over the UART bridge in ACKed 256-byte chunks, and verifies a
+CRC-16/CCITT of the whole image against the device.
+
+```bash
+.venv/bin/python tools/swd/flash.py            # our firmware (firmware/gd32/build/gd32_firmware.bin)
+.venv/bin/python tools/swd/flash.py --factory  # restore the factory dump (gd32_flash.bin)
+.venv/bin/python tools/swd/flash.py img.bin     # arbitrary raw image at 0x08000000
+```
+
+It issues `reset halt` before loading the writer (a plain halt of a sleeping
+firmware — e.g. factory standby WFI — can leave the writer unable to emit
+`READY`), then `reset; go` after, unless `--no-reset` is given. A CRC mismatch
+returns non-zero.
+
+### 4.4. Reading live GPIO / registers (diagnostics)
+```bash
+.venv/bin/pyocd cmd -t cortex_m -f 100k -c "halt" -c "read32 0x48001414" -c "go"
+```
+Reading the factory's live GPIO state (flash `gd32_flash.bin`, power on with the
+button, `halt`, read `GPIOA/B/C/F` CTL+OCTL) is the ground-truth method for pin
+roles — see docs/GD32_HARDWARE_MAP.md §6.9.
 
 ---
 
