@@ -167,37 +167,32 @@ on/off лишається в GD32 і не конфліктує з app-логік
 
 ---
 
-## 9. 🟢 MQTT downlink-керування (відновлений формат)
+## 9. 🟢 ESPHome: Wi-Fi provisioning + native API у HA
 
-**Що:** використати відновлений формат `D/<serial>` (plaintext+CRC, без AES) для
-прямого керування (пороги CO2 тощо) — див. `custom_components/htram/protocol.py`
-(`crc16`, таблиця) і формат у полях `[0xf:0x1d]`.
+**Що:** провіжинг і HA-інтеграцію повністю закриває **сам ESPHome** — це частина
+конфігу §3, не окрема робота: `wifi:` (+ improv/captive-portal за потреби) і
+`api:` (native API, HA автовиявляє пристрій з усіма сутностями). Окремий
+UART-протокол до GD32 — у §3.
 
-**Очікуваний результат:** публікація валідного `D/<serial>`-кадру застосовує
-пороги CO2 на пристрої; звірити семантику полів `0x15/0x17/0x19/0x1b` живцем.
+**Очікуваний результат:** пристрій провіжиниться штатним ESPHome-потоком і
+з'являється в HA через native API з усіма сутностями (CO2/T/H/батарея/статус +
+кнопки/налаштування); окремий MQTT не потрібен.
 
-**Файли/доки:** [`custom_components/htram/`](../custom_components/htram/)
-(`mqtt_source.py`, `protocol.py`), [`tools/test_downlink_mqtt.py`](../tools/test_downlink_mqtt.py),
-[integration-plan.md](integration-plan.md).
-
----
-
-## 10. 🟢 Провіжинг Wi-Fi/BLE та інтеграція HA
-
-**Що:** довести до кінця HA-інтеграцію (`custom_components/htram`) і провіжинг
-(BLE/captive-portal) за [integration-plan.md](integration-plan.md); підключення
-керування вимагає натискання кнопки на пристрої (властивість заводської).
-
-**Очікуваний результат:** пристрій провіжиниться, з'являється в HA з усіма
-сутностями (сенсори, кнопки, налаштування), керування працює.
-
-**Файли/доки:** [`custom_components/htram/`](../custom_components/htram/)
-(`config_flow.py`, `coordinator.py`), [integration-plan.md](integration-plan.md),
+**Файли/доки:** [`esphome/htram.yaml`](../esphome/htram.yaml),
 [CUSTOM_FIRMWARE_SPEC §9.1](CUSTOM_FIRMWARE_SPEC.md).
+
+> **Legacy (не для ESPHome-шляху):** [`custom_components/htram/`](../custom_components/htram/)
+> (mqtt_source/config_flow/coordinator) і відновлений MQTT downlink-формат
+> `D/<serial>` — це шлях керування **заводською** прошивкою ESP через її
+> MQTT/cloud-протокол. На ESPHome-шляху **не потрібні** (native API замінює
+> MQTT). Свою роль (ціль реверсу — дамп прошивки) вони вже відіграли. Рішення:
+> прибрати/архівувати, або лишити тільки якщо хочемо підтримувати ще й непрошиті
+> заводські пристрої. Референс формату/CRC: `custom_components/htram/protocol.py`.
 
 ---
 
 ### Рекомендований порядок
-`§1 (PLL)` → `§3 (ESPHome UART)` → `§2 (standby)` паралельно → далі `§4 (display)`,
-`§6 (button)`, `§5 (OTA)` → доробки `§7–§10`. §1 і §3 — фундамент, решта на них
-спирається.
+`§1 (PLL)` → `§3 (ESPHome UART + wifi/api = §9)` → `§2 (standby)` паралельно →
+далі `§4 (display)`, `§6 (button)`, `§5 (OTA)` → доробки `§7, §8`. §1 і §3 —
+фундамент, решта на них спирається. MQTT/окрема HA-інтеграція **вилучені** з
+плану (ESPHome native API їх замінює).
