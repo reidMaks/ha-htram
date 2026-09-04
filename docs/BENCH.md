@@ -114,7 +114,7 @@ Register-мапи GD32F150 (звірені, `tools/swd/uart_test.c`): `BSRR=+0x1
 - [x] Знайти **кнопку**: `PA0` (Active-HIGH, підтяжка на платі до GND).
 - [x] Знайти **зумер**: `PB0` (TIMER2_CH2, 2304 Hz).
 - [x] Знайти **підсвітку**: `PB8` (TIMER15_CH0 / HIGH = ON).
-- [x] SRAM-проба **SHT30**: бітбенг I2C `PB6`(SCL)/`PB7`(SDA), `PA8`(nRESET), `PB2`(PWR) → T/H зчитано стабільно!
+- [x] SRAM-проба **SHT30**: бітбенг I2C `PB6`(SCL)/`PB7`(SDA), `PB2`(PWR) (без `PA8` — то RESET ESP32, не SHT30) → T/H зчитано стабільно!
 - [x] SRAM-проба **CRIR M1**: USART0 (`PA9`/`PA10`) @ 9600, `PB9`/`PB11` (5V Boost / PWR Switch), Modbus Cmd #0 `FE 04 00 07 00 01 94 04` → зчитано CO₂ (533..704 ppm)!
 - [x] SRAM-проба **дисплея**: ST7789 3-wire 9-bit SPI (`PB12` RES, `PB13` SCK, `PB14` CS, `PB15` SDA, `PB8` Backlight) → тестові патерни відмальовано успішно!
 
