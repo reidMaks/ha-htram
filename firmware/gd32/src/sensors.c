@@ -285,9 +285,13 @@ int sensors_poll_co2(uint16_t *co2_ppm, uint8_t *warmup_flag)
 
 void sensors_init(void)
 {
-    /* 1. SHT30 Power & Pins (PB2 Pwr, PA8 Reset, PB6 SCL, PB7 SDA) */
-    gpio_cfg_out_pp(GPIOA_BASE, 8);
-    GPIOA_BOP = (1 << 8); /* PA8 nRESET HIGH */
+    /* 1. SHT30 Pins (PB6 SCL, PB7 SDA). PA8 is intentionally left as INPUT.
+     * We used to treat PA8 as the SHT30 hardware nRESET and pulse it low here,
+     * but the factory never drives PA8, the SHT3x nRESET has an internal
+     * pull-up, and we reset the sensor over I2C anyway. Bench evidence points to
+     * PA8 being the ESP32 enable/reset line: our boot pulse reset the ESP on
+     * every GD32 start ("came up, then dropped"). Leave it alone. */
+    gpio_cfg_in(GPIOA_BASE, 8, 1); /* input, pull-up (matches factory idle) */
 
     /* SCL (PB6) and SDA (PB7): Open-Drain, 50MHz, Pull-up */
     uint32_t ctl_b = GPIO_CTL(GPIOB_BASE);
@@ -303,10 +307,13 @@ void sensors_init(void)
     GPIOB_BOP = (1 << 6);
     sda_mode_input();
 
-    /* Pulse reset on SHT30 */
-    GPIOA_BC = (1 << 8);
-    delay_ms(5);
-    GPIOA_BOP = (1 << 8);
+    /* SHT30 soft reset over I2C (0x30A2), replacing the removed nRESET pulse */
+    i2c_start();
+    if (i2c_write_byte(0x88)) {
+        i2c_write_byte(0x30);
+        i2c_write_byte(0xA2);
+    }
+    i2c_stop();
     delay_ms(20);
 
     /* Send Break command (0x3093) to ensure SHT30 is in low-power idle mode */
