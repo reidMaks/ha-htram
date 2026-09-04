@@ -216,6 +216,27 @@ void protocol_process_rx(void)
         case STATE_CRC1: {
             uint16_t expected_crc = (uint16_t)rx_crc0 | ((uint16_t)b << 8);
             if (expected_crc == calc_crc) {
+#ifdef RX_DEBUG
+                /* Bench instrumentation only: acknowledge every accepted frame
+                 * so downlink reception can be counted from the host. Never
+                 * built into the shipping firmware -- it is not in the §5
+                 * protocol and the ESP32 would treat it as a bad packet. */
+                {
+                    static uint16_t rx_debug_count = 0;
+                    rx_debug_count++;
+                    uint8_t ack[8];
+                    ack[0] = PROTOCOL_MAGIC0;
+                    ack[1] = PROTOCOL_MAGIC1;
+                    ack[2] = 0x7F;
+                    ack[3] = current_cmd;
+                    ack[4] = (uint8_t)(rx_debug_count & 0xFF);
+                    ack[5] = (uint8_t)(rx_debug_count >> 8);
+                    uint16_t ack_crc = crc16_ccitt(&ack[2], 4);
+                    ack[6] = (uint8_t)(ack_crc & 0xFF);
+                    ack[7] = (uint8_t)(ack_crc >> 8);
+                    uart1_write(ack, sizeof(ack));
+                }
+#endif
                 /* Valid command execution */
                 if (current_cmd == CMD_TYPE_SET_BACKLIGHT) {
                     display_set_backlight(cmd_buf[0]);
