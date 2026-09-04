@@ -1,0 +1,58 @@
+# HTRAM — мінімальний стартовий ESPHome для ESP32-WROOM-32E.
+#
+# Мета цього кроку (див. docs/BENCH.md):
+#   * замінити заводський ESP-AT → ESP більше НЕ керує міжчиповим UART;
+#   * дати бездротовий доступ (API / OTA / логи) одразу;
+#   * ВАЖЛИВО: тут НАВМИСНО немає `uart:` на GPIO16/17 — поки Pico рулить
+#     лінією GD32<->ESP (USART1 / PA2/PA3), ESP мусить лишати ці піни входами
+#     (high-Z), інакше конфлікт на шині. `uart:`+драйвер GD32 додамо пізніше,
+#     коли ESP забиратиме лінк собі.
+
+substitutions:
+  name: htram
+  friendly_name: HTRAM
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+
+esp32:
+  board: esp32dev          # ESP32-WROOM-32E (D0WD-V3)
+  framework:
+    type: esp-idf
+    advanced:
+      minimum_chip_revision: "3.0"   # чип rev 3.0 → менший бінар
+      sram1_as_iram: true            # +40 КБ IRAM
+
+# Консоль/логи йдуть по UART0 (USB, GPIO1/3) — міжчипового GPIO16/17 НЕ чіпає.
+logger:
+  baud_rate: 115200
+
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  # Fallback-точка доступу + captive-portal — штатний provisioning (ТЗ §9.1).
+  ap:
+    ssid: "${friendly_name} Setup"
+
+captive_portal:
+
+# Діагностика — щоб одразу бачити, що ESP живий по мережі.
+sensor:
+  - platform: wifi_signal
+    name: "WiFi RSSI"
+    update_interval: 30s
+  - platform: uptime
+    name: "Uptime"
+
+text_sensor:
+  - platform: version
+    name: "ESPHome Version"

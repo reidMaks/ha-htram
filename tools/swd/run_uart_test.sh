@@ -27,25 +27,36 @@ SIZE=$(stat -c%s ${BIN})
 echo "Binary size: ${SIZE} bytes"
 
 echo ""
-echo "=== Loading into SRAM via SWD ==="
-openocd \
-    -f interface/cmsis-dap.cfg \
-    -c "transport select swd" \
-    -c "adapter speed 1000" \
-    -f target/stm32f1x.cfg \
-    -c "gdb_port disabled" \
-    -c "telnet_port disabled" \
-    -c "tcl_port disabled" \
-    -c "init" \
-    -c "reset halt" \
-    -c "load_image ${BIN} 0x20000000 bin" \
-    -c "reg sp 0x20002000" \
-    -c "reg pc ${ENTRY_THUMB}" \
-    -c "reg xPSR 0x01000000" \
-    -c "resume" \
-    -c "exit"
+PYOCD="../../.venv/bin/pyocd"
+if [ ! -f "${PYOCD}" ]; then
+    PYOCD=pyocd
+fi
 
 echo ""
-echo "=== Code is running! ==="
-echo "Listen on UART:  picocom -b 115200 /dev/ttyACM0"
-echo "Or:              stty -F /dev/ttyACM0 115200 raw -echo && cat /dev/ttyACM0"
+echo "=== Loading into SRAM via SWD (pyocd @ 100k) ==="
+"${PYOCD}" cmd -t cortex_m -f 100k \
+    -c "halt; loadmem 0x20000000 ${BIN}; wreg sp 0x20002000; wreg pc ${ENTRY_THUMB}; wreg xpsr 0x01000000; c"
+
+echo ""
+echo "=== Code is running! Listening on /dev/ttyACM0 @ 115200 ==="
+VENV_PYTHON="../../.venv/bin/python3"
+if [ ! -f "${VENV_PYTHON}" ]; then
+    VENV_PYTHON=python3
+fi
+
+"${VENV_PYTHON}" -u -c "
+import serial, sys, time
+try:
+    ser = serial.Serial('/dev/ttyACM0', 115200, timeout=1)
+    print('[Ready] Connected to /dev/ttyACM0. Press Ctrl+C to stop.\n', flush=True)
+    while True:
+        line = ser.readline()
+        if line:
+            sys.stdout.write(line.decode('utf-8', errors='replace'))
+            sys.stdout.flush()
+except KeyboardInterrupt:
+    print('\n[Stopped]')
+except Exception as e:
+    print(f'Serial error: {e}')
+"
+

@@ -44,3 +44,4 @@ passwd
 
 # оточення для перевірки проти актуального HA (потребує Python 3.14)
 .venv-ha/
+esphome/secrets.yaml
