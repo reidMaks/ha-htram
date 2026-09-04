@@ -107,7 +107,6 @@ int main(void)
     uint32_t last_co2_tick = 0;
     uint32_t last_telemetry_tick = 0;
     uint32_t last_ui_tick = 0;
-    uint32_t last_thermal_tick = 0;
 
     int button_prev = 0;
 
@@ -139,12 +138,6 @@ int main(void)
             } else {
                 sensor_err = 0;
             }
-        }
-
-        /* Dynamic Thermal Model Update (every 6000ms: 1200 ticks of 5ms) */
-        if (tick_5ms - last_thermal_tick >= 1200) {
-            last_thermal_tick = tick_5ms;
-            sensors_update_thermal_model(1, is_usb_present, 1);
         }
 
         /* CRIR M1 CO2 Poll (every 2500ms: 500 ticks of 5ms) */

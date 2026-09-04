@@ -33,13 +33,20 @@ void periph_init(void)
     gpio_cfg_in(GPIOA_BASE, 15, 1); /* Pullup */
     gpio_cfg_in(GPIOC_BASE, 13, 0); /* Float */
 
-    /* 6. ADC Initialization for Battery (PB1 / Ch9) */
+    /* 6. ADC Initialization for Battery (PB1 / Ch9, confirmed ADC_IN9 in the
+     *    GD32F150xx datasheet §pinout) */
     RCU_APB2EN |= RCU_APB2EN_ADCEN;
     *(volatile uint32_t *)0x40021004 |= 0x8000; /* RCU_CFG0 APB2/6 */
     *(volatile uint32_t *)0x40021030 |= 0x0100; /* RCU_CFG2 ADC clock source */
-    /* PB2 as Output Push-Pull (Battery divider switch, Active HIGH) */
+
+    /* PB2 is driven HIGH once and then left alone. It gates neither the SHT30
+     * nor the battery divider: bench probe tools/swd/battery_test.c reads the
+     * SHT30 with valid CRC at PB2=0, and channel 9 returns the same count
+     * (2589 vs 2590) either way. The datasheet gives PB2 no analog function at
+     * all. HIGH matches the factory init; toggling it per reading only risked
+     * disturbing the bus for nothing. */
     gpio_cfg_out_pp(GPIOB_BASE, 2);
-    GPIOB_BC = (1 << 2); /* Default OFF to prevent battery drain */
+    GPIOB_BOP = (1 << 2);
 
     /* PB1 as Analog: Mode 11, No pull */
     uint32_t ctl_b = GPIO_CTL(GPIOB_BASE);
@@ -50,6 +57,12 @@ void periph_init(void)
     ADC_RSQ0 = 0; /* Sequence length = 1 */
     ADC_RSQ2 = 9; /* Channel 9 (PB1) */
     ADC_SAMPT1 = (7 << (9 * 3)); /* 239.5 cycles */
+
+    /* Software trigger for the regular sequence: ETSRC = 0b111 (SWRCST) with
+     * ETERC enabled. Asserting SWRCST alone left EOC unset on the first
+     * conversion after calibration (see battery_test.c test 2), which made the
+     * very first battery reading stale. */
+    ADC_CTL1 = (ADC_CTL1 & ~(7U << 17)) | (7U << 17) | (1U << 20);
 
     /* Power ON ADC */
     ADC_CTL1 |= 1;
@@ -121,24 +134,25 @@ int periph_read_battery(uint16_t *batt_mv, uint8_t *is_usb_present, uint8_t *is_
         *is_charging = (usb && chrg_pin) ? 1 : 0;
     }
 
-    /* 1. Connect battery divider via PB2 */
-    GPIOB_BOP = (1 << 2);
-    delay_cycles(400); /* ~50us settling time */
-
-    /* 2. Start conversion on Channel 9 (PB1) */
-    ADC_STAT &= ~(1 << 1); /* Clear EOC */
+    /* Start conversion on Channel 9 (PB1) */
+    ADC_STAT = 0; /* Clear EOC */
+    ADC_RSQ0 = 0;
     ADC_RSQ2 = 9;
     ADC_CTL1 |= (1 << 22); /* SWRCST */
 
-    uint32_t to = 10000;
+    uint32_t to = 200000;
     while (!(ADC_STAT & (1 << 1)) && --to) ;
+    if (!to) {
+        return -1; /* conversion never completed; leave *batt_mv untouched */
+    }
 
     uint16_t raw = (uint16_t)(ADC_RDATA & 0xFFFF);
 
-    /* 3. Disconnect battery divider via PB2 */
-    GPIOB_BC = (1 << 2);
-
-    /* Factory formula: mV = (raw * 3275) >> 11 */
+    /* Factory formula: mV = (raw * 3275) >> 11. Validated on the bench against
+     * the reference unit's own factory telemetry: raw 2588 -> 4138 mV here vs
+     * 4143 mV reported over MQTT by a device on the same charger. Deriving the
+     * scale from Vrefint instead lands at 4176 mV, so the factory constant --
+     * not a nominal 2:1 divider at 3.3 V -- is the accurate one. */
     uint32_t mv = ((uint32_t)raw * 3275UL) >> 11;
     if (batt_mv) {
         *batt_mv = (uint16_t)mv;

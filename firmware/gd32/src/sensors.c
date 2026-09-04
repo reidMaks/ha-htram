@@ -125,41 +125,48 @@ static uint8_t sht30_crc8(const uint8_t *data, int len)
     return crc;
 }
 
-static uint8_t factory_log2(uint16_t v)
-{
-    if (v == 0) return 0;
-    uint8_t r = 0;
-    while (v > 0) {
-        v >>= 1;
-        r++;
-    }
-    return r;
-}
-
-static uint16_t cnt_bl = 0;
-static uint16_t cnt_usb = 0;
-static uint16_t cnt_boost = 0;
-
-void sensors_update_thermal_model(uint8_t bl_on, uint8_t usb_on, uint8_t boost_on)
-{
-    if (bl_on) {
-        if (cnt_bl < 16) cnt_bl++;
-    } else {
-        if (cnt_bl > 0) cnt_bl--;
-    }
-
-    if (usb_on) {
-        if (cnt_usb < 16) cnt_usb++;
-    } else {
-        if (cnt_usb > 0) cnt_usb--;
-    }
-
-    if (boost_on) {
-        if (cnt_boost < 12) cnt_boost++;
-    } else {
-        if (cnt_boost > 0) cnt_boost--;
-    }
-}
+/*
+ * Board self-heating offset.
+ *
+ * The SHT30 sits on the PCB beside the MCU and the 5 V boost, so it reads well
+ * above ambient: the bench probe measured 31.9 C at the sensor with the die at
+ * ~43 C (internal channel 16, V25 = 1.45 V, 4.1 mV/C) on an open board.
+ * A correction is genuinely needed -- the factory firmware has one for a reason.
+ *
+ * What it must NOT be is the quantised model previously reversed from flash
+ * 0x08005A30. That version fed three ramping counters through a log2 and
+ * subtracted (off_bl + off_usb + off_boost) whole degrees, which meant:
+ *   - the reported value slid ~8 C downward in 1 C steps over the first ~96 s
+ *     after boot while the raw reading barely moved, and
+ *   - it swung a further 5 C (and 10 points of RH) on the USB status bit, which
+ *     PC13 does not currently deliver reliably.
+ * Those two effects are exactly the wandering readings we set out to fix.
+ *
+ * The temperature constant is calibrated on the bench: with a factory-firmware
+ * unit sitting alongside, both on battery and both thermally settled, the
+ * reference reported 25 C while this board read 23.50 C at an 8.00 C offset --
+ * so 6.50 C is what actually lands on the reference. Note the reference only
+ * transmits whole degrees (protocol.py, telemetry byte [23]), which caps the
+ * achievable accuracy here at roughly +/-0.5 C.
+ *
+ * Measure before changing these: the correction exists to cancel *this board's*
+ * self-heating, so recalibrate with both units side by side and settled, or you
+ * end up encoding a difference in conditions instead.
+ *
+ * The humidity constant follows from the same measurement and is not an
+ * independent fudge: a sensor sitting 6.5 C above ambient reads a lower RH for
+ * the same water content. At 50 %RH / 25 C ambient the vapour pressure is
+ * 1.59 kPa, and against saturation at 31.5 C (4.62 kPa) that is 34.3 %RH -- which
+ * is what the raw reading actually was (34.46 %). The two constants therefore
+ * describe one and the same 6.5 C of self-heating.
+ *
+ * Caveat: adding a constant is only valid near this operating point. The true
+ * relation is multiplicative in saturation pressure, so at markedly different
+ * temperature or humidity this will drift. Converting through dew point would
+ * fix that properly.
+ */
+#define SHT30_T_OFFSET_001C     650   /* subtract 6.50 C  -- bench-calibrated */
+#define SHT30_RH_OFFSET_001PCT  1555  /* add 15.55 %RH    -- bench-calibrated */
 
 int sensors_read_sht30(int16_t *temp_001c, uint16_t *hum_001pct)
 {
@@ -194,18 +201,8 @@ int sensors_read_sht30(int16_t *temp_001c, uint16_t *hum_001pct)
     /* Raw RH [0.01 %] = 10000 * raw_h / 65535 */
     uint32_t h_raw = ((uint32_t)10000 * raw_h) / 65535;
 
-    /* Honeywell logarithmic thermal offset model (reversed from flash 0x08005A30) */
-    uint8_t off_bl = factory_log2(cnt_bl);
-    if (off_bl > 5) off_bl = 5;
-
-    uint8_t off_usb = factory_log2(cnt_usb);
-    if (off_usb > 5) off_usb = 5;
-
-    uint8_t off_boost = factory_log2(cnt_boost);
-    if (off_boost > 3) off_boost = 3;
-
-    int32_t t_comp = t_raw - (int32_t)(off_bl + off_usb + off_boost) * 100;
-    int32_t h_comp = (int32_t)h_raw + (int32_t)(3 * off_bl + 2 * (off_usb + off_boost)) * 100;
+    int32_t t_comp = t_raw - SHT30_T_OFFSET_001C;
+    int32_t h_comp = (int32_t)h_raw + SHT30_RH_OFFSET_001PCT;
     if (h_comp > 10000) h_comp = 10000;
     if (h_comp < 0) h_comp = 0;
 
