@@ -106,12 +106,19 @@ int periph_read_button(void)
     return gpio_get(GPIOA_BASE, 0);
 }
 
-int periph_read_battery(uint16_t *batt_mv, uint8_t *is_usb_charging)
+int periph_read_battery(uint16_t *batt_mv, uint8_t *is_usb_present, uint8_t *is_charging)
 {
-    /* Check PA15 with pullup: 1 = USB connected / charging */
-    int usb = gpio_get(GPIOA_BASE, 15);
-    if (is_usb_charging) {
-        *is_usb_charging = usb ? 1 : 0;
+    /* PC13: 1 = USB 5V VBUS present, 0 = on battery */
+    int usb = gpio_get(GPIOC_BASE, 13);
+
+    /* PA15: Charger status (active only when USB 5V is present) */
+    int chrg_pin = gpio_get(GPIOA_BASE, 15);
+
+    if (is_usb_present) {
+        *is_usb_present = usb ? 1 : 0;
+    }
+    if (is_charging) {
+        *is_charging = (usb && chrg_pin) ? 1 : 0;
     }
 
     /* 1. Connect battery divider via PB2 */

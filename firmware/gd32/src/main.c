@@ -97,7 +97,8 @@ int main(void)
     uint16_t hum_001pct = 0;
     uint16_t co2_ppm = 0;
     uint16_t batt_mv = 0;
-    uint8_t is_usb_charging = 1;
+    uint8_t is_usb_present = 0;
+    uint8_t is_charging = 0;
     uint8_t warmup = 1;
     uint8_t sensor_err = 0;
 
@@ -130,7 +131,7 @@ int main(void)
             last_sht_tick = tick_5ms;
 
             /* Read actual battery voltage & USB charging state */
-            periph_read_battery(&batt_mv, &is_usb_charging);
+            periph_read_battery(&batt_mv, &is_usb_present, &is_charging);
 
             /* Read SHT30 with thermal compensation */
             if (sensors_read_sht30(&temp_001c, &hum_001pct) != 0) {
@@ -143,7 +144,7 @@ int main(void)
         /* Dynamic Thermal Model Update (every 6000ms: 1200 ticks of 5ms) */
         if (tick_5ms - last_thermal_tick >= 1200) {
             last_thermal_tick = tick_5ms;
-            sensors_update_thermal_model(1, is_usb_charging, 1);
+            sensors_update_thermal_model(1, is_usb_present, 1);
         }
 
         /* CRIR M1 CO2 Poll (every 2500ms: 500 ticks of 5ms) */
@@ -160,9 +161,8 @@ int main(void)
             last_telemetry_tick = tick_5ms;
 
             uint8_t status = 0;
-            if (is_usb_charging) {
-                status |= STATUS_FLAG_USB_PRESENT | STATUS_FLAG_CHARGING;
-            }
+            if (is_usb_present) status |= STATUS_FLAG_USB_PRESENT;
+            if (is_charging)    status |= STATUS_FLAG_CHARGING;
             if (warmup || co2_ppm == 0) status |= STATUS_FLAG_WARMUP;
             if (sensor_err) status |= STATUS_FLAG_SENSOR_ERR;
             if (btn) status |= STATUS_FLAG_BUTTON_PRESSED;
@@ -211,8 +211,12 @@ int main(void)
             display_draw_string(80, 217, buf, COLOR_YELLOW, COLOR_BLACK);
             int l_b = 0; while (buf[l_b]) l_b++;
             display_draw_string(80 + l_b * 8 + 4, 217, "MV", COLOR_WHITE, COLOR_BLACK);
-            if (is_usb_charging) {
+            if (is_charging) {
                 display_draw_string(160, 217, "[CHRG]", COLOR_GREEN, COLOR_BLACK);
+            } else if (is_usb_present) {
+                display_draw_string(160, 217, "[USB ]", COLOR_CYAN, COLOR_BLACK);
+            } else {
+                display_draw_string(160, 217, "[BATT]", COLOR_YELLOW, COLOR_BLACK);
             }
         }
 

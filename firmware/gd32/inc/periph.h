@@ -7,7 +7,7 @@ void periph_init(void);
 void periph_set_leds(uint8_t red, uint8_t yellow, uint8_t green, uint8_t brightness);
 void periph_beep(uint16_t freq_hz, uint16_t duration_ms);
 int periph_read_button(void);
-int periph_read_battery(uint16_t *batt_mv, uint8_t *is_usb_charging);
+int periph_read_battery(uint16_t *batt_mv, uint8_t *is_usb_present, uint8_t *is_charging);
 
 void watchdog_init(void);
 void watchdog_kick(void);
