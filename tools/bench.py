@@ -67,6 +67,148 @@ def cmd_uart(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def crc16_ccitt(data: bytes) -> int:
+    crc = 0x0000
+    for b in data:
+        crc ^= (b << 8)
+        for _ in range(8):
+            if crc & 0x8000:
+                crc = ((crc << 1) ^ 0x1021) & 0xFFFF
+            else:
+                crc = (crc << 1) & 0xFFFF
+    return crc
+
+
+def cmd_telemetry(args: argparse.Namespace) -> None:
+    """Listen to binary HTRAM protocol stream and decode telemetry packets."""
+    try:
+        import serial
+    except ImportError:
+        print("Error: pyserial not installed in .venv", file=sys.stderr)
+        sys.exit(1)
+
+    port = args.port or SERIAL_PORT
+    baud = args.baud or BAUD_RATE
+    duration = getattr(args, "duration", 0) or 0
+    dur_str = f"for {duration}s" if duration > 0 else "Ctrl+C to stop"
+    print(f"[TELEMETRY] Opening {port} @ {baud} baud ({dur_str})...")
+    start_t = time.time()
+    try:
+        ser = serial.Serial(port, baud, timeout=0.1)
+        ser.reset_input_buffer()
+        buf = bytearray()
+        while True:
+            if duration > 0 and (time.time() - start_t) >= duration:
+                break
+            chunk = ser.read(64)
+            if chunk:
+                buf.extend(chunk)
+                while len(buf) >= 2:
+                    idx = buf.find(b"\xAA\x55")
+                    if idx == -1:
+                        if buf[-1] == 0xAA:
+                            buf = buf[-1:]
+                        else:
+                            buf.clear()
+                        break
+                    if idx > 0:
+                        del buf[:idx]
+
+                    if len(buf) < 3:
+                        break
+
+                    pkt_type = buf[2]
+                    if pkt_type == 0x01:
+                        if len(buf) < 14:
+                            break
+                        raw = bytes(buf[:14])
+                        del buf[:14]
+
+                        co2, temp_001, hum_001, batt_mv, status, crc = struct.unpack("<HhHHBH", raw[3:14])
+                        calc = crc16_ccitt(raw[2:12])
+                        crc_ok = "OK" if calc == crc else f"ERR (exp 0x{calc:04X})"
+
+                        t_c = temp_001 / 100.0
+                        h_pct = hum_001 / 100.0
+
+                        st_flags = []
+                        if status & 0x01: st_flags.append("Charging")
+                        if status & 0x02: st_flags.append("USB")
+                        if status & 0x04: st_flags.append("Warm-up")
+                        if status & 0x08: st_flags.append("SensorErr")
+                        if status & 0x10: st_flags.append("Button")
+
+                        now_str = time.strftime("%H:%M:%S")
+                        print(f"[{now_str}] TELEMETRY: CO2={co2:4d} ppm | Temp={t_c:5.2f} °C | Hum={h_pct:5.2f} %RH | Batt={batt_mv} mV | Status=[{', '.join(st_flags)}] | CRC={crc_ok}")
+                    elif pkt_type == 0x02:
+                        if len(buf) < 8:
+                            break
+                        raw = bytes(buf[:8])
+                        del buf[:8]
+
+                        proto_ver, fw_ver, crc = struct.unpack("<BHH", raw[3:8])
+                        calc = crc16_ccitt(raw[2:6])
+                        crc_ok = "OK" if calc == crc else f"ERR (exp 0x{calc:04X})"
+                        major = (fw_ver >> 8) & 0xFF
+                        minor = fw_ver & 0xFF
+                        print(f"[HELLO] Protocol v{proto_ver}, GD32 Firmware v{major}.{minor} | CRC={crc_ok}")
+                    else:
+                        del buf[:2]
+    except KeyboardInterrupt:
+        print("\n[TELEMETRY] Stopped.")
+    except Exception as e:
+        print(f"[TELEMETRY] Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_cmd(args: argparse.Namespace) -> None:
+    """Send binary downlink command to GD32 via UART."""
+    try:
+        import serial
+    except ImportError:
+        print("Error: pyserial not installed in .venv", file=sys.stderr)
+        sys.exit(1)
+
+    port = args.port or SERIAL_PORT
+    baud = args.baud or BAUD_RATE
+
+    pkt = bytearray([0xAA, 0x55])
+    if args.action == "beep":
+        freq = args.freq
+        dur = args.duration_ms
+        payload = struct.pack("<BHH", 0x13, freq, dur)
+        crc = crc16_ccitt(payload)
+        pkt.extend(payload)
+        pkt.extend(struct.pack("<H", crc))
+        print(f"[CMD] Sending BEEP: freq={freq}Hz, dur={dur}ms (pkt: {pkt.hex()})")
+    elif args.action == "leds":
+        payload = struct.pack("<BBBBB", 0x12, args.red, args.yellow, args.green, args.brightness)
+        crc = crc16_ccitt(payload)
+        pkt.extend(payload)
+        pkt.extend(struct.pack("<H", crc))
+        print(f"[CMD] Sending LEDS: R={args.red} Y={args.yellow} G={args.green} Br={args.brightness} (pkt: {pkt.hex()})")
+    elif args.action == "backlight":
+        payload = struct.pack("<BB", 0x11, args.brightness)
+        crc = crc16_ccitt(payload)
+        pkt.extend(payload)
+        pkt.extend(struct.pack("<H", crc))
+        print(f"[CMD] Sending BACKLIGHT: Br={args.brightness}% (pkt: {pkt.hex()})")
+    elif args.action == "bootloader":
+        payload = struct.pack("<BI", 0x1F, 0xDEADBEEF)
+        crc = crc16_ccitt(payload)
+        pkt.extend(payload)
+        pkt.extend(struct.pack("<H", crc))
+        print(f"[CMD] Sending ENTER_BOOTLOADER (pkt: {pkt.hex()})")
+    else:
+        print(f"Unknown command action: {args.action}", file=sys.stderr)
+        return
+
+    with serial.Serial(port, baud, timeout=0.5) as ser:
+        ser.write(pkt)
+        ser.flush()
+        print("[CMD] Sent successfully!")
+
+
 def compile_and_load_sram(src_path: Path) -> None:
     """Compile a C file for Cortex-M3 SRAM execution and load it via pyocd."""
     ld_script = SWD_DIR / "sram.ld"
@@ -563,11 +705,48 @@ def main() -> None:
     p_disp.add_argument("--baud", type=int, default=BAUD_RATE, help="Baud rate")
     p_disp.add_argument("--duration", type=float, default=25, help="Duration in seconds (0 = forever)")
 
+    # telemetry
+    p_tel = sub.add_parser("telemetry", help="Decode binary HTRAM protocol telemetry stream")
+    p_tel.add_argument("--port", default=SERIAL_PORT, help="Serial port")
+    p_tel.add_argument("--baud", type=int, default=BAUD_RATE, help="Baud rate")
+    p_tel.add_argument("--duration", type=float, default=20, help="Duration in seconds (0 = forever)")
+
+    # firmware
+    p_fw = sub.add_parser("firmware", help="Build and load GD32 firmware into SRAM and listen to telemetry")
+    p_fw.add_argument("--port", default=SERIAL_PORT, help="Serial port")
+    p_fw.add_argument("--baud", type=int, default=BAUD_RATE, help="Baud rate")
+    p_fw.add_argument("--duration", type=float, default=30, help="Duration in seconds (0 = forever)")
+
     # disasm
     p_dis = sub.add_parser("disasm", help="Disassemble address in flash dump")
     p_dis.add_argument("address", help="Hex address (e.g. 0x08005400)")
     p_dis.add_argument("--bytes", type=int, default=128, help="Number of bytes to disassemble")
     p_dis.add_argument("--callers", action="store_true", help="Search for all callers of address")
+
+    # cmd
+    p_cmd = sub.add_parser("cmd", help="Send binary command to GD32 via UART")
+    p_cmd.add_argument("--port", default=SERIAL_PORT, help="Serial port")
+    p_cmd.add_argument("--baud", type=int, default=BAUD_RATE, help="Baud rate")
+    cmd_sub = p_cmd.add_subparsers(dest="action", required=True)
+
+    # cmd beep
+    p_beep = cmd_sub.add_parser("beep", help="Sound buzzer")
+    p_beep.add_argument("--freq", type=int, default=2304, help="Frequency in Hz")
+    p_beep.add_argument("--duration-ms", type=int, default=100, help="Duration in ms")
+
+    # cmd leds
+    p_leds = cmd_sub.add_parser("leds", help="Set front RGB LEDs")
+    p_leds.add_argument("--red", type=int, default=0, help="Red LED (0/1)")
+    p_leds.add_argument("--yellow", type=int, default=0, help="Yellow LED (0/1)")
+    p_leds.add_argument("--green", type=int, default=0, help="Green LED (0/1)")
+    p_leds.add_argument("--brightness", type=int, default=100, help="Brightness (0..100)")
+
+    # cmd backlight
+    p_bl = cmd_sub.add_parser("backlight", help="Set LCD backlight")
+    p_bl.add_argument("brightness", type=int, help="Brightness (0..100)")
+
+    # cmd bootloader
+    cmd_sub.add_parser("bootloader", help="Request GD32 jump to ROM bootloader")
 
     # search
     p_sea = sub.add_parser("search", help="Search hex pattern in flash dump")
@@ -602,6 +781,17 @@ def main() -> None:
     elif args.cmd == "display":
         args.source = str(SWD_DIR / "display_test.c")
         cmd_run(args)
+    elif args.cmd == "telemetry":
+        cmd_telemetry(args)
+    elif args.cmd == "cmd":
+        cmd_cmd(args)
+    elif args.cmd == "firmware":
+        fw_dir = REPO_ROOT / "firmware" / "gd32"
+        res = subprocess.run(["make", "-C", str(fw_dir), "load-sram"])
+        if res.returncode != 0:
+            print("Error building/loading firmware", file=sys.stderr)
+            sys.exit(1)
+        cmd_telemetry(args)
 
 
 if __name__ == "__main__":

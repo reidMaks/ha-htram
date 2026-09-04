@@ -58,6 +58,18 @@
 #define TC    (1 << 6)
 #define TBE   (1 << 7)
 
+/* ── ADC Registers ── */
+#define ADC_BASE        0x40012400
+#define ADC_STAT        (*(volatile uint32_t *)(ADC_BASE + 0x00))
+#define ADC_CTL0        (*(volatile uint32_t *)(ADC_BASE + 0x04))
+#define ADC_CTL1        (*(volatile uint32_t *)(ADC_BASE + 0x08))
+#define ADC_SAMPT0      (*(volatile uint32_t *)(ADC_BASE + 0x0C))
+#define ADC_SAMPT1      (*(volatile uint32_t *)(ADC_BASE + 0x10))
+#define ADC_RSQ0        (*(volatile uint32_t *)(ADC_BASE + 0x2C))
+#define ADC_RSQ1        (*(volatile uint32_t *)(ADC_BASE + 0x30))
+#define ADC_RSQ2        (*(volatile uint32_t *)(ADC_BASE + 0x34))
+#define ADC_RDATA       (*(volatile uint32_t *)(ADC_BASE + 0x4C))
+
 
 /* ── Helpers ── */
 
@@ -543,6 +555,67 @@ static int crir_read_co2(int32_t *co2_ppm, uint8_t *resp_buf)
     return 0;
 }
 
+/* ── ADC Battery & Pin Probe ── */
+static void adc_init(void)
+{
+    /* Enable ADC clock: RCU_APB2EN bit 9 */
+    RCU_APB2EN |= (1 << 9);
+    *(volatile uint32_t *)0x40021004 |= 0x8000;
+    *(volatile uint32_t *)0x40021030 |= 0x0100;
+    delay_cycles(2000);
+
+    /* PB1 as Analog: Mode 11, No pull */
+    uint32_t ctl = GPIO_CTL(GPIOB_BASE);
+    ctl |= (3U << (1 * 2));
+    GPIO_CTL(GPIOB_BASE) = ctl;
+    GPIO_PUD(GPIOB_BASE) &= ~(3U << (1 * 2));
+
+    /* PA15 as Input with pullup (USB / Charging detect) */
+    ctl = GPIO_CTL(GPIOA_BASE);
+    ctl &= ~(3U << (15 * 2));
+    GPIO_CTL(GPIOA_BASE) = ctl;
+    GPIO_PUD(GPIOA_BASE) &= ~(3U << (15 * 2));
+    GPIO_PUD(GPIOA_BASE) |= (1U << (15 * 2));
+
+    /* PC13 as Input */
+    ctl = GPIO_CTL(GPIOC_BASE);
+    ctl &= ~(3U << (13 * 2));
+    GPIO_CTL(GPIOC_BASE) = ctl;
+
+    /* Sequence length = 1 */
+    ADC_RSQ0 = 0;
+    /* Channel 9 (PB1), sample time = 7 (239.5 cycles) */
+    ADC_RSQ2 = 9;
+    ADC_SAMPT1 = (7 << (9 * 3));
+
+    /* Power ON ADC: ADCON = 1 */
+    ADC_CTL1 |= 1;
+    delay_cycles(2000);
+
+    /* Reset Calibration: RSTCLB = 1 with timeout */
+    ADC_CTL1 |= (1 << 3);
+    uint32_t to = 100000;
+    while ((ADC_CTL1 & (1 << 3)) && --to) ;
+
+    /* Start Calibration: CLB = 1 with timeout */
+    ADC_CTL1 |= (1 << 2);
+    to = 100000;
+    while ((ADC_CTL1 & (1 << 2)) && --to) ;
+}
+
+static uint16_t adc_read_channel(uint8_t ch)
+{
+    ADC_RSQ2 = ch;
+    if (ch < 10) {
+        ADC_SAMPT1 = (7 << (ch * 3));
+    }
+    /* Trigger conversion: SWRCST = bit 22 */
+    ADC_CTL1 |= (1 << 22);
+    uint32_t to = 100000;
+    while (!(ADC_STAT & (1 << 1)) && --to) ;
+    return (uint16_t)(ADC_RDATA & 0xFFFF);
+}
+
 void main(void)
 {
     /* 1. Clocks: GPIOA(17), GPIOB(18), GPIOC(19), GPIOF(22), USART0(14 in APB2), USART1(17 in APB1) */
@@ -683,7 +756,10 @@ void main(void)
     print_hex8((uint8_t)USART0_STAT);
     uart_puts("\r\n");
 
-    uart_puts("\r\n[INFO] Starting periodic measurement loop:\r\n");
+    uart_puts("\r\n[INFO] Initializing ADC for Battery & Power detection...\r\n");
+    adc_init();
+
+    uart_puts("[INFO] Starting periodic measurement loop:\r\n");
 
 
 
@@ -748,6 +824,24 @@ void main(void)
             }
         }
 
+        /* Read Battery (PB1 / Ch9) & PA0 (Ch0) */
+        uint16_t raw_ch9 = adc_read_channel(9);
+        uint16_t mv_ch9 = (uint16_t)(((uint32_t)raw_ch9 * 3275) >> 11);
+        uint16_t raw_ch0 = adc_read_channel(0);
+        uint16_t mv_ch0 = (uint16_t)(((uint32_t)raw_ch0 * 3275) >> 11);
+        int pa15 = gpio_read_pin(GPIOA_BASE, 15);
+        int pc13 = gpio_read_pin(GPIOC_BASE, 13);
+
+        uart_puts("  |  Batt(PB1): ");
+        print_dec(mv_ch9);
+        uart_puts(" mV (raw ");
+        print_dec(raw_ch9);
+        uart_puts(") | PA0: ");
+        print_dec(mv_ch0);
+        uart_puts(" mV | PA15=");
+        uart_putc('0' + pa15);
+        uart_puts(" PC13=");
+        uart_putc('0' + pc13);
         uart_puts("\r\n");
 
         delay_ms_polling(2000);

@@ -14,6 +14,7 @@ sources/
 resources/
 dist/
 build/
+firmware/gd32/build/
 *.apk
 *.zip
 scan_and_decompile.py
