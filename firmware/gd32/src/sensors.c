@@ -179,8 +179,11 @@ int sensors_read_sht30(int16_t *temp_001c, uint16_t *hum_001pct)
     if (!i2c_write_byte(0x00)) { i2c_stop(); return -3; }
     i2c_stop();
 
-    /* Measurement duration ~15ms */
-    delay_ms(15);
+    /* SHT30 high-repeatability single-shot needs up to 15.5 ms to convert. The
+     * delay_ms() calibration runs short at full core speed (it was only masked
+     * while a debugger throttled SRAM execution ~3x), so give generous margin
+     * rather than sit right on the datasheet limit and read stale/NAKed data. */
+    delay_ms(40);
 
     i2c_start();
     if (!i2c_write_byte(0x89)) { i2c_stop(); return -4; }
