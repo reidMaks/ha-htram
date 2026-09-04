@@ -91,9 +91,14 @@
 #define USART_UEN       (1 << 0)
 #define USART_REN       (1 << 2)
 #define USART_TEN       (1 << 3)
-#define USART_RBNE      (1 << 5)
+#define USART_RBNEIE    (1 << 5)  /* CTL0: RBNE interrupt enable */
+#define USART_RBNE      (1 << 5)  /* STAT: read data buffer not empty */
 #define USART_TC        (1 << 6)
 #define USART_TBE       (1 << 7)
+
+/* ── NVIC ── */
+#define NVIC_ISER0      (*(volatile uint32_t *)0xE000E100)
+#define USART1_IRQn     28
 
 /* ── Free Watchdog (FWDGT / IWDG) ── */
 #define FWDGT_BASE      0x40003000

@@ -19,14 +19,44 @@ static void uart1_write(const uint8_t *data, size_t len)
     }
 }
 
+/* ── RX ring buffer, filled by USART1_IRQHandler, drained by the main loop ──
+ *
+ * Polling RDATA from the main loop cannot keep up: at 115200 a byte lands every
+ * 87 us into a single-byte register with no FIFO, while the loop can stall for
+ * hundreds of ms (CO2 timeout, bitbang UI). Measured on the bench as 0 of 20
+ * commands received. The ISR moves each byte out the instant it arrives; the
+ * main loop then consumes the ring at its own pace. Size is a power of two so
+ * the index wrap is a mask. */
+#define RX_RING_SIZE 256
+static volatile uint8_t rx_ring[RX_RING_SIZE];
+static volatile uint16_t rx_head; /* written by ISR only */
+static volatile uint16_t rx_tail; /* written by main only */
+static volatile uint16_t rx_overflows;
+
+void USART1_IRQHandler(void)
+{
+    while (USART1_STAT & USART_RBNE) {
+        uint8_t b = (uint8_t)USART1_RDATA; /* read clears RBNE */
+        uint16_t next = (uint16_t)((rx_head + 1) & (RX_RING_SIZE - 1));
+        if (next != rx_tail) {
+            rx_ring[rx_head] = b;
+            rx_head = next;
+        } else {
+            rx_overflows++; /* ring full: drop, keep newest reads flowing */
+        }
+    }
+}
+
 static inline int uart1_rx_ready(void)
 {
-    return (USART1_STAT & USART_RBNE) ? 1 : 0;
+    return (rx_head != rx_tail) ? 1 : 0;
 }
 
 static inline uint8_t uart1_getc(void)
 {
-    return (uint8_t)USART1_RDATA;
+    uint8_t b = rx_ring[rx_tail];
+    rx_tail = (uint16_t)((rx_tail + 1) & (RX_RING_SIZE - 1));
+    return b;
 }
 
 void protocol_init(uint32_t baud)
@@ -54,7 +84,14 @@ void protocol_init(uint32_t baud)
     /* USART1 Baud Rate Divisor: System Clock / Baud */
     uint32_t div = SYSTEM_CLOCK_HZ / baud;
     USART1_BAUD = div;
-    USART1_CTL0 = USART_UEN | USART_TEN | USART_REN;
+
+    /* Enable RX-not-empty interrupt and unmask USART1 (IRQ28) in the NVIC so
+     * incoming bytes are captured by USART1_IRQHandler regardless of what the
+     * main loop is doing. */
+    rx_head = 0;
+    rx_tail = 0;
+    NVIC_ISER0 = (1U << USART1_IRQn);
+    USART1_CTL0 = USART_UEN | USART_TEN | USART_REN | USART_RBNEIE;
 }
 
 void protocol_send_telemetry(uint16_t co2, int16_t temp, uint16_t hum, uint16_t batt_mv, uint8_t status)
