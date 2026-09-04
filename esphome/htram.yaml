@@ -95,3 +95,83 @@ sensor:
 text_sensor:
   - platform: version
     name: "ESPHome Version"
+
+button:
+  - platform: template
+    name: "Beep"
+    icon: "mdi:volume-high"
+    on_press:
+      - lambda: |-
+          id(htram_core)->send_beep(2000, 200);
+
+  - platform: template
+    name: "Enter GD32 Bootloader"
+    icon: "mdi:cellphone-arrow-down"
+    entity_category: diagnostic
+    on_press:
+      - lambda: |-
+          id(htram_core)->send_enter_bootloader();
+
+number:
+  - platform: template
+    name: "Screen Brightness"
+    icon: "mdi:brightness-6"
+    min_value: 0
+    max_value: 100
+    step: 1
+    initial_value: 100
+    optimistic: true
+    set_action:
+      - lambda: |-
+          id(htram_core)->send_backlight(x);
+
+  - platform: template
+    name: "LED Brightness"
+    id: led_brightness
+    icon: "mdi:brightness-percent"
+    entity_category: config
+    min_value: 0
+    max_value: 100
+    step: 1
+    initial_value: 50
+    optimistic: true
+    set_action:
+      - lambda: |-
+          id(htram_core)->send_leds(id(led_red).state, id(led_yellow).state, id(led_green).state, x);
+
+switch:
+  - platform: template
+    name: "LED Red"
+    id: led_red
+    icon: "mdi:led-on"
+    optimistic: true
+    turn_on_action:
+      - lambda: |-
+          id(htram_core)->send_leds(1, id(led_yellow).state, id(led_green).state, id(led_brightness).state);
+    turn_off_action:
+      - lambda: |-
+          id(htram_core)->send_leds(0, id(led_yellow).state, id(led_green).state, id(led_brightness).state);
+
+  - platform: template
+    name: "LED Yellow"
+    id: led_yellow
+    icon: "mdi:led-on"
+    optimistic: true
+    turn_on_action:
+      - lambda: |-
+          id(htram_core)->send_leds(id(led_red).state, 1, id(led_green).state, id(led_brightness).state);
+    turn_off_action:
+      - lambda: |-
+          id(htram_core)->send_leds(id(led_red).state, 0, id(led_green).state, id(led_brightness).state);
+
+  - platform: template
+    name: "LED Green"
+    id: led_green
+    icon: "mdi:led-on"
+    optimistic: true
+    turn_on_action:
+      - lambda: |-
+          id(htram_core)->send_leds(id(led_red).state, id(led_yellow).state, 1, id(led_brightness).state);
+    turn_off_action:
+      - lambda: |-
+          id(htram_core)->send_leds(id(led_red).state, id(led_yellow).state, 0, id(led_brightness).state);
