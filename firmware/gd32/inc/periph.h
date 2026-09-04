@@ -13,6 +13,5 @@ void watchdog_init(void);
 void watchdog_kick(void);
 
 void system_enter_bootloader(void);
-void system_power_off(void);
 
 #endif /* PERIPH_H */
