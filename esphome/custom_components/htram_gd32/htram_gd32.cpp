@@ -79,6 +79,9 @@ void HtramGd32Component::loop() {
       } else if (type == 0x02) {
         // pkt_hello_t: magic(2)+type(1)+proto_ver(1)+fw_ver(2)+flags(1)+epoch(4)+git(4)+crc16(2)
         expected_len = 17;
+      } else if (type == 0x03) {
+        // pkt_button_event_t: magic(2)+type(1)+state(1)+duration_ms(2)+crc16(2)
+        expected_len = 7;
       } else {
         ESP_LOGW(TAG, "Unknown packet type: 0x%02X", type);
         rx_buffer_.clear();
@@ -154,6 +157,27 @@ void HtramGd32Component::process_packet_(const uint8_t *data, size_t len) {
     if (this->fw_version_sensor_ != nullptr && fw_version_ != ver) {
       fw_version_ = ver;
       this->fw_version_sensor_->publish_state(ver);
+    }
+  } else if (type == 0x03) {
+    // pkt_button_event_t: state(1) duration_ms(2 LE)
+    uint8_t state = data[3];
+    uint16_t duration_ms = data[4] | (data[5] << 8);
+
+    if (this->button_sensor_ != nullptr) {
+      this->button_sensor_->publish_state(state != 0);
+    }
+
+    if (state == 0) {
+      ESP_LOGI(TAG, "Button released (held %u ms)", duration_ms);
+      if (this->button_action_sensor_ != nullptr) {
+        if (duration_ms >= 30 && duration_ms < 600) {
+          this->button_action_sensor_->publish_state("single");
+        } else if (duration_ms >= 600 && duration_ms < 2800) {
+          this->button_action_sensor_->publish_state("long");
+        }
+      }
+    } else {
+      ESP_LOGD(TAG, "Button pressed");
     }
   }
 }

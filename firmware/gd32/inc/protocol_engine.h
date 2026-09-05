@@ -7,6 +7,7 @@
 void protocol_init(uint32_t baud);
 void protocol_send_telemetry(uint16_t co2, int16_t temp, uint16_t hum, uint16_t batt_mv, uint8_t status);
 void protocol_send_hello(void);
+void protocol_send_button_event(uint8_t state, uint16_t duration_ms);
 void protocol_process_rx(void);
 
 #endif /* PROTOCOL_ENGINE_H */

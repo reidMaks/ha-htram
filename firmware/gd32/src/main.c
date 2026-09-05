@@ -108,9 +108,6 @@ int main(void)
     uint32_t last_telemetry_ms = 0;
     uint32_t last_ui_ms = 0;
     uint32_t btn_hold_start_ms = 0;
-
-    int button_prev = 0;
-
     /* Green LED ON indicating ready */
     periph_set_leds(0, 0, 1, 100);
 
@@ -123,56 +120,68 @@ int main(void)
         /* Advance non-blocking buzzer/melody playback (synchronized to SysTick wall-clock) */
         periph_buzzer_tick(now);
 
-        /* Poll Button SW1. Reported to the ESP32 via STATUS_FLAG_BUTTON_PRESSED
-         * (spec §9.8: app-level button logic lives on the ESP).
-         */
-        int btn = periph_read_button();
+        /* Poll Button SW1 with ~15ms software debounce filter */
+        int raw_btn = periph_read_button();
+        static int debounced_btn = 0;
+        static uint8_t debounce_count = 0;
 
-        if (btn) {
-            if (btn_hold_start_ms == 0) {
-                btn_hold_start_ms = now ? now : 1;
-            } else if (now - btn_hold_start_ms >= 3000) { /* 3 seconds hold */
-                periph_beep_blocking(2000, 100);
-                
-                /* STANDBY MODE ENTRY */
-                display_fill_screen(COLOR_BLACK);
-                delay_ms(100);
+        if (raw_btn != debounced_btn) {
+            debounce_count++;
+            if (debounce_count >= 3) {
+                debounced_btn = raw_btn;
+                debounce_count = 0;
 
-                /* Kill Peripherals */
-                display_set_backlight(0); /* Backlight OFF (PWM duty 0; PB8 is AF) */
-                GPIOB_BC = (1 << 11) | (1 << 9); /* Sensor Power OFF */
-                periph_set_leds(0, 0, 0, 0); /* LEDs OFF (this correctly sets data pins LOW) */
-                GPIOA_BC = (1 << 1); /* VLED OFF */
-                *(volatile uint32_t *)(GPIOF_BASE + 0x14) = (1 << 7); /* GPIOF_BC = PF7 OFF */
-                GPIOB_BC = (1 << 3); /* PB3 OFF */
-
-                /* Wait for button release */
-                while(periph_read_button()) delay_ms(10);
-
-                /* Wait for next long press to wake up */
-                uint32_t wakeup_ticks = 0;
-                while(1) {
-                    if (periph_read_button()) {
-                        wakeup_ticks++;
-                        if (wakeup_ticks > 400) { /* 2 seconds */
-                            /* Hard Reset MCU */
-                            *(volatile uint32_t *)0xE000ED0C = (0x5FA << 16) | (1 << 2);
-                            while(1);
-                        }
-                    } else {
-                        wakeup_ticks = 0;
-                    }
-                    delay_ms(5);
+                if (debounced_btn) {
+                    /* 0 -> 1: Button Pressed */
+                    btn_hold_start_ms = now ? now : 1;
+                    periph_beep(2304, 20); /* press feedback chirp */
+                    protocol_send_button_event(1, 0);
+                } else {
+                    /* 1 -> 0: Button Released */
+                    uint32_t dur = (btn_hold_start_ms && now >= btn_hold_start_ms) ? (now - btn_hold_start_ms) : 0;
+                    if (dur > 65535) dur = 65535;
+                    btn_hold_start_ms = 0;
+                    protocol_send_button_event(0, (uint16_t)dur);
                 }
             }
         } else {
-            btn_hold_start_ms = 0;
+            debounce_count = 0;
         }
 
-        if (btn && !button_prev) {
-            periph_beep(2304, 20); /* press feedback */
+        if (debounced_btn && btn_hold_start_ms && (now - btn_hold_start_ms >= 3000)) {
+            periph_beep_blocking(2000, 100);
+            
+            /* STANDBY MODE ENTRY */
+            display_fill_screen(COLOR_BLACK);
+            delay_ms(100);
+
+            /* Kill Peripherals */
+            display_set_backlight(0); /* Backlight OFF (PWM duty 0; PB8 is AF) */
+            GPIOB_BC = (1 << 11) | (1 << 9); /* Sensor Power OFF */
+            periph_set_leds(0, 0, 0, 0); /* LEDs OFF (this correctly sets data pins LOW) */
+            GPIOA_BC = (1 << 1); /* VLED OFF */
+            *(volatile uint32_t *)(GPIOF_BASE + 0x14) = (1 << 7); /* GPIOF_BC = PF7 OFF */
+            GPIOB_BC = (1 << 3); /* PB3 OFF */
+
+            /* Wait for button release */
+            while(periph_read_button()) delay_ms(10);
+
+            /* Wait for next long press to wake up */
+            uint32_t wakeup_ticks = 0;
+            while(1) {
+                if (periph_read_button()) {
+                    wakeup_ticks++;
+                    if (wakeup_ticks > 400) { /* 2 seconds */
+                        /* Hard Reset MCU */
+                        *(volatile uint32_t *)0xE000ED0C = (0x5FA << 16) | (1 << 2);
+                        while(1);
+                    }
+                } else {
+                    wakeup_ticks = 0;
+                }
+                delay_ms(5);
+            }
         }
-        button_prev = btn;
 
         /* SHT30 & Battery Poll (every 30000ms) */
         if (now - last_sht_ms >= 30000) {
@@ -207,7 +216,7 @@ int main(void)
             if (is_charging)    status |= STATUS_FLAG_CHARGING;
             if (warmup || co2_ppm == 0) status |= STATUS_FLAG_WARMUP;
             if (sensor_err) status |= STATUS_FLAG_SENSOR_ERR;
-            if (btn) status |= STATUS_FLAG_BUTTON_PRESSED;
+            if (debounced_btn) status |= STATUS_FLAG_BUTTON_PRESSED;
 
             uint8_t leds = periph_get_led_state();
             if (leds & 1) status |= STATUS_FLAG_LED_RED;

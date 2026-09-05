@@ -13,6 +13,7 @@
 /* ── Packet Types ── */
 #define PKT_TYPE_TELEMETRY          0x01
 #define PKT_TYPE_HELLO              0x02
+#define PKT_TYPE_BUTTON             0x03
 
 #define CMD_TYPE_DRAW_RECT          0x10
 #define CMD_TYPE_SET_BACKLIGHT      0x11
@@ -59,6 +60,15 @@ typedef struct {
     uint32_t git_hash;      /* first 4 bytes of commit SHA, 8 hex (LE) */
     uint16_t crc16;         /* CRC-16-CCITT */
 } pkt_hello_t;
+
+typedef struct {
+    uint8_t magic0;         /* 0xAA */
+    uint8_t magic1;         /* 0x55 */
+    uint8_t type;           /* 0x03 */
+    uint8_t state;          /* 1 = pressed, 0 = released */
+    uint16_t duration_ms;   /* ms button was held (0 on press) */
+    uint16_t crc16;         /* CRC-16-CCITT */
+} pkt_button_event_t;
 
 typedef struct {
     uint8_t magic0;         /* 0xAA */

@@ -11,6 +11,7 @@ from . import HtramGd32Component
 CONF_HTRAM_ID = "htram_gd32_id"
 CONF_USB = "usb"
 CONF_CHARGING = "charging"
+CONF_BUTTON = "button"
 
 CONFIG_SCHEMA = cv.Schema({
     cv.GenerateID(CONF_HTRAM_ID): cv.use_id(HtramGd32Component),
@@ -20,6 +21,7 @@ CONFIG_SCHEMA = cv.Schema({
     cv.Optional(CONF_CHARGING): binary_sensor.binary_sensor_schema(
         device_class=DEVICE_CLASS_BATTERY_CHARGING,
     ),
+    cv.Optional(CONF_BUTTON): binary_sensor.binary_sensor_schema(),
 })
 
 def to_code(config):
@@ -31,3 +33,6 @@ def to_code(config):
     if CONF_CHARGING in config:
         bs = yield binary_sensor.new_binary_sensor(config[CONF_CHARGING])
         cg.add(hub.set_charging_binary_sensor(bs))
+    if CONF_BUTTON in config:
+        bs = yield binary_sensor.new_binary_sensor(config[CONF_BUTTON])
+        cg.add(hub.set_button_binary_sensor(bs))

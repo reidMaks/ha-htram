@@ -115,6 +115,9 @@ binary_sensor:
       name: "USB Power"
     charging:
       name: "Charging"
+    button:
+      name: "Button"
+      id: htram_button
 
 text_sensor:
   - platform: version
@@ -123,6 +126,8 @@ text_sensor:
     firmware_version:
       name: "GD32 Firmware"
       entity_category: diagnostic
+    button_action:
+      name: "Button Action"
 
 button:
   - platform: template

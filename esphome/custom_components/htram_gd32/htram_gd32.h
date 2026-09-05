@@ -43,6 +43,9 @@ class HtramGd32Component : public Component, public uart::UARTDevice {
   // Called by HtramLedSwitch on user command: channel 0=red 1=yellow 2=green.
   void set_led(uint8_t channel, bool state);
 
+  void set_button_binary_sensor(binary_sensor::BinarySensor *s) { button_sensor_ = s; }
+  void set_button_action_sensor(text_sensor::TextSensor *s) { button_action_sensor_ = s; }
+
   // Returns JSON string with result
   std::string execute_ota(const std::vector<uint8_t> &firmware);
 
@@ -53,8 +56,10 @@ class HtramGd32Component : public Component, public uart::UARTDevice {
   sensor::Sensor *batt_sensor_{nullptr};
   sensor::Sensor *batt_level_sensor_{nullptr};
   text_sensor::TextSensor *fw_version_sensor_{nullptr};
+  text_sensor::TextSensor *button_action_sensor_{nullptr};
   binary_sensor::BinarySensor *usb_sensor_{nullptr};
   binary_sensor::BinarySensor *charging_sensor_{nullptr};
+  binary_sensor::BinarySensor *button_sensor_{nullptr};
   switch_::Switch *led_switch_[3]{nullptr, nullptr, nullptr};  // 0=red 1=yellow 2=green
   bool led_state_[3]{false, false, false};
   std::string fw_version_;  // last published, to avoid redundant updates
