@@ -39,7 +39,6 @@ class HtramGd32Component : public Component, public uart::UARTDevice {
   void send_melody(const uint16_t *freqs, const uint16_t *durs, uint8_t count);
   void send_stop();                          // silence / cancel current melody
   void play_rtttl(const std::string &song);  // parse RTTTL, stream to GD32
-  void play_anthem();                        // convenience: Ukrainian anthem RTTTL
 
   // Called by HtramLedSwitch on user command: channel 0=red 1=yellow 2=green.
   void set_led(uint8_t channel, bool state);

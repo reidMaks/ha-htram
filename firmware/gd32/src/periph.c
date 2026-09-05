@@ -41,6 +41,11 @@ void periph_init(void)
     /* Configure system clock to 72MHz via PLL */
     system_clock_config();
 
+    /* 0. SysTick: 1 ms periodic tick for wall-clock timekeeping */
+    *(volatile uint32_t *)0xE000E014 = (SYSTEM_CLOCK_HZ / 1000u) - 1u; /* 71999 ticks */
+    *(volatile uint32_t *)0xE000E018 = 0;                              /* Reset counter */
+    *(volatile uint32_t *)0xE000E010 = 7u;                              /* CLKSOURCE=CPU, TICKINT=1, ENABLE=1 */
+
     /* Enable GPIO Clocks */
     RCU_AHBEN |= RCU_AHBEN_PAEN | RCU_AHBEN_PBEN | RCU_AHBEN_PCEN;
 
@@ -156,9 +161,33 @@ uint8_t periph_get_led_state(void)
     return g_led_state;
 }
 
+/* ── SysTick 1ms Wall-Clock Timekeeper ── */
+static volatile uint32_t g_system_millis = 0;
+
+void SysTick_Handler(void)
+{
+    g_system_millis++;
+}
+
+uint32_t periph_millis(void)
+{
+    return g_system_millis;
+}
+
 /* ── Buzzer: PB0 = TIMER2_CH2 (AF1). Tone via PWM, non-blocking melody player.
- * Timer ticks at 1 MHz so a note of f Hz uses CAR = 1e6/f, 50% duty. ── */
+ * Timer ticks at 1 MHz so a note of f Hz uses CAR = 1e6/f.
+ *
+ * Transducer acoustic/electrical behavior:
+ * - Resonant frequency of LS1 is ~2304 Hz (half-period = 217 us).
+ * - Driving lower frequencies (<1.6 kHz) with 50% square waves keeps the switch
+ *   closed for hundreds of microseconds (e.g. 1.27 ms at 392 Hz), which drives
+ *   the miniature magnetic coil into deep core saturation, pulls down VCC, and
+ *   slams the membrane against the core ("хрип").
+ * - By capping the HIGH pulse to 220 us, the coil receives its optimal magnetic
+ *   impulse regardless of frequency without ever saturating.
+ * ── */
 #define BUZZER_TICK_HZ 1000000u
+#define BUZZER_PULSE_MAX_US 400u
 #define MELODY_MAX     96u
 
 static uint16_t mel_freq[MELODY_MAX];
@@ -179,7 +208,9 @@ static void buzzer_tone(uint16_t freq)
     if (car < 2) car = 2;
     if (car > 65536u) car = 65536u;
     TIMER2_CAR = car - 1u;
-    TIMER2_CH2CV = car / 2u; /* 50% duty square wave */
+    uint32_t high = car / 2u;
+    if (high > BUZZER_PULSE_MAX_US) high = BUZZER_PULSE_MAX_US;
+    TIMER2_CH2CV = high;
     TIMER2_SWEVG = 1u;       /* UPG: latch CAR/CH2CV, restart period */
 }
 
@@ -220,7 +251,12 @@ void periph_buzzer_tick(uint32_t now_ms)
             return;
         }
         buzzer_tone(mel_freq[mel_idx]); /* freq 0 => rest */
-        mel_note_end_ms = now_ms + mel_dur[mel_idx];
+        /* Anchor to previous note end to prevent tempo drift across main-loop jitter */
+        uint32_t next_end = mel_note_end_ms + mel_dur[mel_idx];
+        if ((int32_t)(now_ms - next_end) >= 0) {
+            next_end = now_ms + mel_dur[mel_idx];
+        }
+        mel_note_end_ms = next_end;
     }
 }
 
@@ -240,7 +276,7 @@ void periph_play_melody(const uint8_t *notes4, uint8_t count)
     mel_idx = 0;
     mel_active = 1;
     buzzer_tone(mel_freq[0]);
-    mel_note_end_ms = mel_now_ms + mel_dur[0];
+    mel_note_end_ms = periph_millis() + mel_dur[0];
 }
 
 void periph_beep(uint16_t freq_hz, uint16_t duration_ms)
@@ -252,7 +288,7 @@ void periph_beep(uint16_t freq_hz, uint16_t duration_ms)
     mel_idx = 0;
     mel_active = 1;
     buzzer_tone(mel_freq[0]);
-    mel_note_end_ms = mel_now_ms + duration_ms;
+    mel_note_end_ms = periph_millis() + duration_ms;
 }
 
 void periph_beep_blocking(uint16_t freq_hz, uint16_t duration_ms)

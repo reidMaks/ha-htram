@@ -58,11 +58,6 @@ api:
         - lambda: |-
             id(htram_core)->play_rtttl(song);
 
-    - service: play_anthem
-      then:
-        - lambda: |-
-            id(htram_core)->play_anthem();
-
     - service: stop_melody
       then:
         - lambda: |-

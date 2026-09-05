@@ -13,6 +13,7 @@ int main(void);
  * protocol_engine.c. Confirmed as IRQ28 on the bench: with RBNEIE set, an
  * incoming byte latched ISPR0 bit 28 (tools/swd/irq_probe.c). */
 void USART1_IRQHandler(void);
+void SysTick_Handler(void);
 
 void Reset_Handler(void)
 {
@@ -60,7 +61,7 @@ void (* const g_pfnVectors[])(void) = {
     Default_Handler, /* DebugMon */
     0,               /* Reserved */
     Default_Handler, /* PendSV */
-    Default_Handler, /* SysTick */
+    SysTick_Handler, /* SysTick */
 
     /* External interrupts (IRQ0..IRQ28). Only USART1 (IRQ28) is handled. */
     Default_Handler, /* IRQ0  WWDGT */

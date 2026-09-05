@@ -148,7 +148,9 @@ static inline void delay_cycles(uint32_t n)
 
 static inline void delay_us(uint32_t us)
 {
-    uint32_t loops_per_us = SYSTEM_CLOCK_HZ / 2000000UL;
+    /* On Cortex-M3 at 72MHz with 2 flash wait-states, subs+bne takes ~3.6 cycles.
+     * 72 cycles per us / 3.6 = 20 loops per us (SYSTEM_CLOCK_HZ / 3600000UL). */
+    uint32_t loops_per_us = SYSTEM_CLOCK_HZ / 3600000UL;
     uint32_t total = us * loops_per_us;
     while (total--) {
         __asm__ volatile("");

@@ -318,12 +318,6 @@ void HtramGd32Component::play_rtttl(const std::string &song) {
   send_melody(freqs.data(), durs.data(), (uint8_t) freqs.size());
 }
 
-void HtramGd32Component::play_anthem() {
-  // Ukrainian anthem, RTTTL (same transcription as the JAAM alarm map project).
-  play_rtttl(
-      "UkraineAnthem:d=4,o=5,b=200:2d5,4d5,32p,4d5,32p,4d5,32p,4c5,4d5,4d#5,2f5,"
-      "4f5,4d#5,2d5,2c5,2a#4,2d5,2a4,2d5,1g4,32p,1g4");
-}
 
 void HtramGd32Component::send_enter_bootloader() {
   uint8_t pkt[9] = {0xAA, 0x55, 0x1F, 0xEF, 0xBE, 0xAD, 0xDE};

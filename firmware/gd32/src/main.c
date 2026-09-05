@@ -103,11 +103,11 @@ int main(void)
     uint8_t warmup = 1;
     uint8_t sensor_err = 0;
 
-    uint32_t tick_5ms = 0;
-    uint32_t last_sht_tick = 0;
-    uint32_t last_co2_tick = 0;
-    uint32_t last_telemetry_tick = 0;
-    uint32_t last_ui_tick = 0;
+    uint32_t last_sht_ms = 0;
+    uint32_t last_co2_ms = 0;
+    uint32_t last_telemetry_ms = 0;
+    uint32_t last_ui_ms = 0;
+    uint32_t btn_hold_start_ms = 0;
 
     int button_prev = 0;
 
@@ -115,21 +115,23 @@ int main(void)
     periph_set_leds(0, 0, 1, 100);
 
     while (1) {
+        uint32_t now = periph_millis();
+
         /* Process all incoming packets from ESP32 */
         protocol_process_rx();
 
-        /* Advance non-blocking buzzer/melody playback (5 ms per tick) */
-        periph_buzzer_tick(tick_5ms * 5);
+        /* Advance non-blocking buzzer/melody playback (synchronized to SysTick wall-clock) */
+        periph_buzzer_tick(now);
 
         /* Poll Button SW1. Reported to the ESP32 via STATUS_FLAG_BUTTON_PRESSED
          * (spec §9.8: app-level button logic lives on the ESP).
          */
         int btn = periph_read_button();
-        static uint32_t btn_hold_ticks = 0;
 
         if (btn) {
-            btn_hold_ticks++;
-            if (btn_hold_ticks == 600) { /* 3 seconds */
+            if (btn_hold_start_ms == 0) {
+                btn_hold_start_ms = now ? now : 1;
+            } else if (now - btn_hold_start_ms >= 3000) { /* 3 seconds hold */
                 periph_beep_blocking(2000, 100);
                 
                 /* STANDBY MODE ENTRY */
@@ -164,7 +166,7 @@ int main(void)
                 }
             }
         } else {
-            btn_hold_ticks = 0;
+            btn_hold_start_ms = 0;
         }
 
         if (btn && !button_prev) {
@@ -172,9 +174,9 @@ int main(void)
         }
         button_prev = btn;
 
-        /* SHT30 & Battery Poll (every 30000ms: 6000 ticks of 5ms) */
-        if (tick_5ms - last_sht_tick >= 6000) {
-            last_sht_tick = tick_5ms;
+        /* SHT30 & Battery Poll (every 30000ms) */
+        if (now - last_sht_ms >= 30000) {
+            last_sht_ms = now;
 
             /* Read actual battery voltage & USB charging state */
             periph_read_battery(&batt_mv, &is_usb_present, &is_charging);
@@ -187,18 +189,18 @@ int main(void)
             }
         }
 
-        /* CRIR M1 CO2 Poll (every 30000ms: 6000 ticks of 5ms) */
-        if (tick_5ms - last_co2_tick >= 6000) {
-            last_co2_tick = tick_5ms;
+        /* CRIR M1 CO2 Poll (every 30000ms) */
+        if (now - last_co2_ms >= 30000) {
+            last_co2_ms = now;
             uint8_t wm = 0;
             if (sensors_poll_co2(&co2_ppm, &wm) == 0) {
                 warmup = wm;
             }
         }
 
-        /* Send Uplink Telemetry (every 30000ms: 6000 ticks of 5ms) */
-        if (tick_5ms - last_telemetry_tick >= 6000) {
-            last_telemetry_tick = tick_5ms;
+        /* Send Uplink Telemetry (every 30000ms) */
+        if (now - last_telemetry_ms >= 30000) {
+            last_telemetry_ms = now;
 
             uint8_t status = 0;
             if (is_usb_present) status |= STATUS_FLAG_USB_PRESENT;
@@ -219,9 +221,9 @@ int main(void)
             protocol_send_telemetry(co2_ppm, temp_001c, hum_001pct, batt_mv, status);
         }
 
-        /* Update Local Screen (every 1000ms: 200 ticks of 5ms) */
-        if (tick_5ms - last_ui_tick >= 200) {
-            last_ui_tick = tick_5ms;
+        /* Update Local Screen (every 1000ms) */
+        if (now - last_ui_ms >= 1000) {
+            last_ui_ms = now;
 
             char buf[32];
 
@@ -271,7 +273,6 @@ int main(void)
 
         /* 5ms delay per loop */
         delay_ms(5);
-        tick_5ms++;
     }
 
     return 0;
