@@ -87,7 +87,7 @@ int main(void)
     protocol_init(GD32_UART_BAUD);
 
     /* 5. Startup Chirp & Send Hello Handshake */
-    periph_beep(2304, 50);
+    periph_beep_blocking(2304, 50);
     protocol_send_hello();
 
     display_fill_rect(20, 105, 200, 25, COLOR_BLACK);
@@ -118,6 +118,9 @@ int main(void)
         /* Process all incoming packets from ESP32 */
         protocol_process_rx();
 
+        /* Advance non-blocking buzzer/melody playback (5 ms per tick) */
+        periph_buzzer_tick(tick_5ms * 5);
+
         /* Poll Button SW1. Reported to the ESP32 via STATUS_FLAG_BUTTON_PRESSED
          * (spec §9.8: app-level button logic lives on the ESP).
          */
@@ -127,7 +130,7 @@ int main(void)
         if (btn) {
             btn_hold_ticks++;
             if (btn_hold_ticks == 600) { /* 3 seconds */
-                periph_beep(2000, 100);
+                periph_beep_blocking(2000, 100);
                 
                 /* STANDBY MODE ENTRY */
                 display_fill_screen(COLOR_BLACK);

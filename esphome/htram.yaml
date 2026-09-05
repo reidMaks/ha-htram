@@ -121,6 +121,13 @@ button:
           id(htram_core)->send_beep(2000, 200);
 
   - platform: template
+    name: "Play Anthem"
+    icon: "mdi:music"
+    on_press:
+      - lambda: |-
+          id(htram_core)->play_anthem();
+
+  - platform: template
     name: "Enter GD32 Bootloader"
     icon: "mdi:cellphone-arrow-down"
     entity_category: diagnostic

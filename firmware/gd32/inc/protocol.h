@@ -18,6 +18,7 @@
 #define CMD_TYPE_SET_BACKLIGHT      0x11
 #define CMD_TYPE_SET_LEDS           0x12
 #define CMD_TYPE_BEEP               0x13
+#define CMD_TYPE_PLAY_MELODY        0x14
 #define CMD_TYPE_ENTER_BOOTLOADER   0x1F
 
 #define BOOTLOADER_MAGIC_KEY        0xDEADBEEFUL

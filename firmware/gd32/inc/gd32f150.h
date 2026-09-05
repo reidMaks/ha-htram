@@ -70,6 +70,16 @@
 #define GPIOB_BC        GPIO_BC(GPIOB_BASE)
 #define GPIOC_BC        GPIO_BC(GPIOC_BASE)
 
+/* ── TIMER2 (general timer; CH2 on PB0 drives the buzzer tone PWM) ── */
+#define TIMER2_BASE     0x40000400
+#define TIMER2_CTL0     (*(volatile uint32_t *)(TIMER2_BASE + 0x00))
+#define TIMER2_SWEVG    (*(volatile uint32_t *)(TIMER2_BASE + 0x14))
+#define TIMER2_CHCTL1   (*(volatile uint32_t *)(TIMER2_BASE + 0x1C))
+#define TIMER2_CHCTL2   (*(volatile uint32_t *)(TIMER2_BASE + 0x20))
+#define TIMER2_PSC      (*(volatile uint32_t *)(TIMER2_BASE + 0x28))
+#define TIMER2_CAR      (*(volatile uint32_t *)(TIMER2_BASE + 0x2C))
+#define TIMER2_CH2CV    (*(volatile uint32_t *)(TIMER2_BASE + 0x3C))
+
 /* ── TIMER15 (single-channel advanced timer + break; drives PB8 backlight PWM) ── */
 #define TIMER15_BASE    0x40014400
 #define TIMER15_CTL0    (*(volatile uint32_t *)(TIMER15_BASE + 0x00))

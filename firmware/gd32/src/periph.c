@@ -1,6 +1,8 @@
 #include "periph.h"
 #include "gd32f150.h"
 
+static void buzzer_init(void);
+
 static void system_clock_config(void)
 {
     /* Enable IRC8M */
@@ -70,8 +72,8 @@ void periph_init(void)
     gpio_cfg_out_pp(GPIOB_BASE, 5);
     periph_set_leds(0, 0, 0, 0);
 
-    /* 3. Buzzer (PB0) */
-    gpio_cfg_out_pp(GPIOB_BASE, 0);
+    /* 3. Buzzer (PB0 = TIMER2_CH2 PWM tone) */
+    buzzer_init();
     GPIOB_BC = (1 << 0);
 
     /* 4. Button SW1 (PA0, Active-HIGH) */
@@ -154,22 +156,113 @@ uint8_t periph_get_led_state(void)
     return g_led_state;
 }
 
+/* ── Buzzer: PB0 = TIMER2_CH2 (AF1). Tone via PWM, non-blocking melody player.
+ * Timer ticks at 1 MHz so a note of f Hz uses CAR = 1e6/f, 50% duty. ── */
+#define BUZZER_TICK_HZ 1000000u
+#define MELODY_MAX     48u
+
+static uint16_t mel_freq[MELODY_MAX];
+static uint16_t mel_dur[MELODY_MAX];
+static volatile uint8_t mel_count;
+static volatile uint8_t mel_idx;
+static volatile uint8_t mel_active;
+static volatile uint32_t mel_now_ms;
+static volatile uint32_t mel_note_end_ms;
+
+static void buzzer_tone(uint16_t freq)
+{
+    if (freq == 0) {
+        TIMER2_CH2CV = 0; /* rest: 0% duty -> silent */
+        return;
+    }
+    uint32_t car = BUZZER_TICK_HZ / freq;
+    if (car < 2) car = 2;
+    if (car > 65536u) car = 65536u;
+    TIMER2_CAR = car - 1u;
+    TIMER2_CH2CV = car / 2u; /* 50% duty square wave */
+    TIMER2_SWEVG = 1u;       /* UPG: latch CAR/CH2CV, restart period */
+}
+
+static void buzzer_init(void)
+{
+    RCU_APB1EN |= RCU_APB1EN_TIMER2EN;
+
+    /* PB0: alternate-function mode, push-pull, high speed, AF1 = TIMER2_CH2 */
+    uint32_t ctl = GPIO_CTL(GPIOB_BASE);
+    ctl &= ~(3u << (0 * 2));
+    ctl |= (2u << (0 * 2));            /* 10 = AF */
+    GPIO_CTL(GPIOB_BASE) = ctl;
+    GPIO_OMD(GPIOB_BASE) &= ~(1u << 0);
+    GPIO_OSPD(GPIOB_BASE) |= (3u << (0 * 2));
+    uint32_t af = GPIO_AFSEL0(GPIOB_BASE);
+    af &= ~(0xFu << 0);               /* pin 0 -> AFSEL0[3:0] */
+    af |= (1u << 0);                  /* AF1 */
+    GPIO_AFSEL0(GPIOB_BASE) = af;
+
+    TIMER2_PSC = (SYSTEM_CLOCK_HZ / BUZZER_TICK_HZ) - 1u; /* 1 MHz tick */
+    TIMER2_CAR = 999;                 /* placeholder */
+    TIMER2_CH2CV = 0;                 /* silent */
+    TIMER2_CHCTL1 = (6u << 4) | (1u << 3); /* CH2 PWM mode 0 + compare preload */
+    TIMER2_CHCTL2 = (1u << 8);        /* CH2EN, active-high (CH2P=0) */
+    TIMER2_SWEVG = 1u;
+    TIMER2_CTL0 = (1u << 7) | (1u << 0); /* ARSE | CEN */
+}
+
+void periph_buzzer_tick(uint32_t now_ms)
+{
+    mel_now_ms = now_ms;
+    if (!mel_active) return;
+    if ((int32_t)(now_ms - mel_note_end_ms) >= 0) {
+        mel_idx++;
+        if (mel_idx >= mel_count) {
+            buzzer_tone(0);
+            mel_active = 0;
+            return;
+        }
+        buzzer_tone(mel_freq[mel_idx]); /* freq 0 => rest */
+        mel_note_end_ms = now_ms + mel_dur[mel_idx];
+    }
+}
+
+void periph_play_melody(const uint8_t *notes4, uint8_t count)
+{
+    if (count == 0) {
+        buzzer_tone(0);
+        mel_active = 0;
+        return;
+    }
+    if (count > MELODY_MAX) count = MELODY_MAX;
+    for (uint8_t i = 0; i < count; i++) {
+        mel_freq[i] = (uint16_t)notes4[i * 4] | ((uint16_t)notes4[i * 4 + 1] << 8);
+        mel_dur[i] = (uint16_t)notes4[i * 4 + 2] | ((uint16_t)notes4[i * 4 + 3] << 8);
+    }
+    mel_count = count;
+    mel_idx = 0;
+    mel_active = 1;
+    buzzer_tone(mel_freq[0]);
+    mel_note_end_ms = mel_now_ms + mel_dur[0];
+}
+
 void periph_beep(uint16_t freq_hz, uint16_t duration_ms)
 {
-    if (freq_hz == 0) freq_hz = 2304; /* Default resonant frequency */
     if (duration_ms == 0) return;
+    mel_freq[0] = (freq_hz == 0) ? 2304 : freq_hz;
+    mel_dur[0] = duration_ms;
+    mel_count = 1;
+    mel_idx = 0;
+    mel_active = 1;
+    buzzer_tone(mel_freq[0]);
+    mel_note_end_ms = mel_now_ms + duration_ms;
+}
 
-    /* Period in us = 1,000,000 / freq */
-    uint32_t period_us = 1000000UL / freq_hz;
-    uint32_t half_period = period_us / 2;
-    uint32_t cycles = ((uint32_t)duration_ms * 1000UL) / period_us;
-
-    for (uint32_t i = 0; i < cycles; i++) {
-        GPIOB_BOP = (1 << 0);
-        delay_us(half_period);
-        GPIOB_BC = (1 << 0);
-        delay_us(half_period);
-    }
+void periph_beep_blocking(uint16_t freq_hz, uint16_t duration_ms)
+{
+    if (duration_ms == 0) return;
+    if (freq_hz == 0) freq_hz = 2304;
+    mel_active = 0; /* cancel any melody in progress */
+    buzzer_tone(freq_hz);
+    delay_ms(duration_ms);
+    buzzer_tone(0);
 }
 
 int periph_read_button(void)

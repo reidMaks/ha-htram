@@ -139,6 +139,7 @@ typedef enum {
     STATE_TYPE,
     STATE_HEADER,
     STATE_PIXELS,
+    STATE_MELODY,
     STATE_CRC0,
     STATE_CRC1
 } rx_state_t;
@@ -160,6 +161,13 @@ static uint16_t pixels_left = 0;
 static uint8_t pixel_hi = 0;
 static uint8_t pixel_phase = 0;
 static uint8_t rx_crc0 = 0;
+
+/* CMD_PLAY_MELODY: streamed count*(freq16_LE, dur16_LE) */
+#define MELODY_MAX_NOTES 48
+static uint8_t melody_buf[MELODY_MAX_NOTES * 4];
+static uint8_t melody_count = 0;   /* stored (clamped) note count */
+static uint16_t melody_idx = 0;    /* byte index while streaming */
+static uint16_t melody_bytes_left = 0;
 
 void protocol_process_rx(void)
 {
@@ -201,6 +209,9 @@ void protocol_process_rx(void)
             } else if (current_cmd == CMD_TYPE_BEEP) {
                 cmd_buf_expected = 4; /* Freq (2), Duration (2) */
                 rx_state = STATE_HEADER;
+            } else if (current_cmd == CMD_TYPE_PLAY_MELODY) {
+                cmd_buf_expected = 1; /* Count (1); notes stream after */
+                rx_state = STATE_HEADER;
             } else if (current_cmd == CMD_TYPE_ENTER_BOOTLOADER) {
                 cmd_buf_expected = 4; /* Key (4) */
                 rx_state = STATE_HEADER;
@@ -226,9 +237,26 @@ void protocol_process_rx(void)
                     display_set_window(rect_x, rect_y, rect_w, rect_h);
                     pixel_phase = 0;
                     rx_state = STATE_PIXELS;
+                } else if (current_cmd == CMD_TYPE_PLAY_MELODY) {
+                    melody_count = cmd_buf[0];
+                    if (melody_count > MELODY_MAX_NOTES) melody_count = MELODY_MAX_NOTES;
+                    melody_idx = 0;
+                    melody_bytes_left = (uint16_t)cmd_buf[0] * 4; /* stream full count for CRC */
+                    rx_state = (melody_bytes_left == 0) ? STATE_CRC0 : STATE_MELODY;
                 } else {
                     rx_state = STATE_CRC0;
                 }
+            }
+            break;
+
+        case STATE_MELODY:
+            calc_crc = crc16_ccitt_update(calc_crc, b);
+            if (melody_idx < sizeof(melody_buf)) {
+                melody_buf[melody_idx] = b; /* store up to the clamp; extra bytes only feed CRC */
+            }
+            melody_idx++;
+            if (--melody_bytes_left == 0) {
+                rx_state = STATE_CRC0;
             }
             break;
 
@@ -289,6 +317,8 @@ void protocol_process_rx(void)
                     uint16_t freq = (uint16_t)cmd_buf[0] | ((uint16_t)cmd_buf[1] << 8);
                     uint16_t dur = (uint16_t)cmd_buf[2] | ((uint16_t)cmd_buf[3] << 8);
                     periph_beep(freq, dur);
+                } else if (current_cmd == CMD_TYPE_PLAY_MELODY) {
+                    periph_play_melody(melody_buf, melody_count);
                 } else if (current_cmd == CMD_TYPE_ENTER_BOOTLOADER) {
                     uint32_t key = (uint32_t)cmd_buf[0] |
                                    ((uint32_t)cmd_buf[1] << 8) |

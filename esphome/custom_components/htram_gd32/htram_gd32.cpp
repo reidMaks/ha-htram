@@ -189,6 +189,37 @@ void HtramGd32Component::set_led(uint8_t channel, bool state) {
   send_leds(led_state_[0], led_state_[1], led_state_[2], 1);
 }
 
+void HtramGd32Component::send_melody(const uint16_t *freqs, const uint16_t *durs, uint8_t count) {
+  if (count == 0) return;
+  if (count > 48) count = 48;  // GD32 clamps to MELODY_MAX
+  std::vector<uint8_t> pkt;
+  pkt.reserve(4 + (size_t) count * 4 + 2);
+  pkt.push_back(0xAA);
+  pkt.push_back(0x55);
+  pkt.push_back(0x14);  // CMD_TYPE_PLAY_MELODY
+  pkt.push_back(count);
+  for (uint8_t i = 0; i < count; i++) {
+    pkt.push_back(freqs[i] & 0xFF);
+    pkt.push_back(freqs[i] >> 8);
+    pkt.push_back(durs[i] & 0xFF);
+    pkt.push_back(durs[i] >> 8);
+  }
+  uint16_t crc = crc16_ccitt(pkt.data() + 2, pkt.size() - 2);  // type..last note byte
+  pkt.push_back(crc & 0xFF);
+  pkt.push_back(crc >> 8);
+  this->write_array(pkt.data(), pkt.size());
+}
+
+void HtramGd32Component::play_anthem() {
+  // Opening of "Ще не вмерла України" (Verbytsky) — approximate transcription;
+  // freq in Hz, dur in ms, freq 0 = rest. Tweak the tables to refine the tune.
+  static const uint16_t f[] = {587, 0,   587, 523, 494, 440, 494, 523, 0,   440,
+                               0,   440, 494, 523, 587, 523, 494, 0,   440, 392};
+  static const uint16_t d[] = {350, 40,  350, 350, 350, 350, 350, 550, 60,  350,
+                               40,  350, 350, 350, 350, 350, 550, 60,  400, 700};
+  send_melody(f, d, sizeof(f) / sizeof(f[0]));
+}
+
 void HtramGd32Component::send_enter_bootloader() {
   uint8_t pkt[9] = {0xAA, 0x55, 0x1F, 0xEF, 0xBE, 0xAD, 0xDE};
   uint16_t crc = crc16_ccitt(&pkt[2], 5);
