@@ -23,6 +23,7 @@ SECTIONS
         . = ALIGN(4);
         _sdata = .;
         *(.data*)
+        *(.ramcode*)
         . = ALIGN(4);
         _edata = .;
     } > SRAM AT > FLASH

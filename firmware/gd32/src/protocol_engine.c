@@ -2,6 +2,7 @@
 #include "gd32f150.h"
 #include "display.h"
 #include "periph.h"
+#include "flasher.h"
 
 /* ── Low-Level UART1 (PA2=TX, PA3=RX) ── */
 
@@ -83,14 +84,15 @@ void protocol_init(uint32_t baud)
     USART1_CTL0 = 0;
     /* USART1 Baud Rate Divisor: System Clock / Baud */
     uint32_t div = SYSTEM_CLOCK_HZ / baud;
-    USART1_BAUD = div;
-
     /* Enable RX-not-empty interrupt and unmask USART1 (IRQ28) in the NVIC so
      * incoming bytes are captured by USART1_IRQHandler regardless of what the
      * main loop is doing. */
     rx_head = 0;
     rx_tail = 0;
     NVIC_ISER0 = (1U << USART1_IRQn);
+    USART1_CTL0 = 0;
+    /* USART1 is on APB1, which is SYSTEM_CLOCK_HZ / 2 (36 MHz) */
+    USART1_BAUD = (SYSTEM_CLOCK_HZ / 2) / baud;
     USART1_CTL0 = USART_UEN | USART_TEN | USART_REN | USART_RBNEIE;
 }
 
@@ -289,7 +291,14 @@ void protocol_process_rx(void)
                                    ((uint32_t)cmd_buf[2] << 16) |
                                    ((uint32_t)cmd_buf[3] << 24);
                     if (key == BOOTLOADER_MAGIC_KEY) {
-                        system_enter_bootloader();
+                        uint8_t ack[6] = {PROTOCOL_MAGIC0, PROTOCOL_MAGIC1, CMD_TYPE_ENTER_BOOTLOADER, 0x79, 0, 0};
+                        uint16_t crc = crc16_ccitt(&ack[2], 2);
+                        ack[4] = (uint8_t)(crc & 0xFF);
+                        ack[5] = (uint8_t)(crc >> 8);
+                        uart1_write(ack, sizeof(ack));
+                        while (!(USART1_STAT & USART_TC))
+                            ;
+                        flasher_run();
                     }
                 }
             }

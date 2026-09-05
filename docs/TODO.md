@@ -106,20 +106,19 @@ UI (Варіант A / LVGL) рендериться на ESP і стрімить
 
 ---
 
-## 5. 🟡 OTA GD32 через ESP (ROM-bootloader)
+## 5. ✅ OTA GD32 через ESP (Резидентний завантажувач у SRAM) — ВИКОНАНО
 
-**Що:** `CMD_TYPE_ENTER_BOOTLOADER=0x1F` реалізовано (стрибок у `0x1FFFEC00`), але
-не тестовано. Треба продумати: ROM-loader скидає периферію і може лишити ESP без
-живлення (рейка PB3/PF7); залив образу з ESP по `PA2/PA3` протоколом ROM-loader;
-гейти (зовнішнє живлення + заряд ≥50% за §7.3).
+**Що зроблено:**
+- Виявлено апаратний баг у заводському ROM-завантажувачі GigaDevice (`0x1FFFEC00`): на `PA3` він замість USART1 ініціалізує регістри USART0 і шле ACK `0x79` на `PA9` (сенсор CO₂).
+- Створено **власний резидентний флешер у SRAM** ([`firmware/gd32/src/flasher.c`](../firmware/gd32/src/flasher.c)), розміщений у секції `.ramcode` у внутрішній пам'яті.
+- GD32 обробляє команду `CMD_ENTER_BOOTLOADER` (`0x1F`, ключ `0xDEADBEEF`), надсилає підтвердження `0xAA 0x55 0x1F 0x79` і викликає `flasher_run()`.
+- Резидентний флешер працює на USART1 (115200 8N1), стирає Flash, прошиває 256-байтними чанками і по команді `CMD_GO` (0x21) виконує плавний перехід (soft-jump) на вектор `Reset_Handler` без скидання живлення периферії (PF7 залишається HIGH, ESP32 не перезавантажується).
+- ESPHome ендпоінт `/gd32_ota` та CLI `tools/swd/flash.py --ota htram.local` протестовані на живому залізі: 7760 байт прошиваються за **889 мс** (8.7 КБ/с), після чого телеметрія продовжує надходити автоматично.
 
-**Очікуваний результат:** з HA/ESP команда переводить GD32 у ROM-loader, ESP
-заливає новий образ, GD32 стартує оновлену прошивку; при провалі — відкат
-зовнішнім Pico (`flash.py`). Продумати живлення ESP під час OTA.
-
-**Файли/доки:** [`firmware/gd32/src/periph.c`](../firmware/gd32/src/periph.c)
-(`system_enter_bootloader`), [CUSTOM_FIRMWARE_SPEC §3.2/§7.3/§10 Етап 3](CUSTOM_FIRMWARE_SPEC.md).
-**Страхувальний інструмент:** `tools/swd/flash.py`, дамп `tools/swd/gd32_flash.bin`.
+**Файли:** [`firmware/gd32/src/flasher.c`](../firmware/gd32/src/flasher.c),
+[`firmware/gd32/inc/flasher.h`](../firmware/gd32/inc/flasher.h),
+[`esphome/custom_components/htram_gd32/htram_gd32.cpp`](../esphome/custom_components/htram_gd32/htram_gd32.cpp),
+[`tools/swd/flash.py`](../tools/swd/flash.py).
 
 ---
 

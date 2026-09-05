@@ -1,8 +1,44 @@
 #include "periph.h"
 #include "gd32f150.h"
 
+static void system_clock_config(void)
+{
+    /* Enable IRC8M */
+    RCU_CTL |= (1 << 0); /* IRC8MEN */
+    while ((RCU_CTL & (1 << 1)) == 0); /* Wait for IRC8MSTB */
+
+    /* Flash latency: 2 wait states for 72MHz */
+    uint32_t fmc_ws = *(volatile uint32_t *)0x40022000;
+    fmc_ws &= ~7U;
+    fmc_ws |= 2U;
+    *(volatile uint32_t *)0x40022000 = fmc_ws;
+
+    /* AHB, APB2 prescalers = /1, APB1 prescaler = /2 */
+    RCU_CFG0 &= ~(0x3FF0U);
+    RCU_CFG0 |= (4U << 8); /* APB1PSC = 100 (/2) */
+
+    /* Config PLL: SRC = IRC8M/2, MUL = 18 */
+    /* Clear PLLSEL (bit 16), PLLMF[3:0] (bits 21:18), PLLMF4 (bit 27) */
+    RCU_CFG0 &= ~((1U << 16) | (0xFU << 18) | (1U << 27));
+    /* Set PLLMF to 18 (bit 27 = 1, bits 21:18 = 0001) */
+    RCU_CFG0 |= (1U << 18) | (1U << 27);
+
+    /* Enable PLL */
+    RCU_CTL |= (1U << 24); /* PLLEN */
+    while ((RCU_CTL & (1U << 25)) == 0); /* Wait for PLLSTB */
+
+    /* Select PLL as system clock */
+    RCU_CFG0 = (RCU_CFG0 & ~3U) | 2U;
+
+    /* Wait until PLL is used as system clock */
+    while ((RCU_CFG0 & (3U << 2)) != (2U << 2));
+}
+
 void periph_init(void)
 {
+    /* Configure system clock to 72MHz via PLL */
+    system_clock_config();
+
     /* Enable GPIO Clocks */
     RCU_AHBEN |= RCU_AHBEN_PAEN | RCU_AHBEN_PBEN | RCU_AHBEN_PCEN;
 
@@ -78,7 +114,7 @@ void periph_init(void)
 
     /* Power ON ADC */
     ADC_CTL1 |= 1;
-    delay_cycles(2000);
+    delay_us(500);
 
     /* Reset Calibration */
     ADC_CTL1 |= (1 << 3);
@@ -115,14 +151,11 @@ void periph_beep(uint16_t freq_hz, uint16_t duration_ms)
     uint32_t half_period = period_us / 2;
     uint32_t cycles = ((uint32_t)duration_ms * 1000UL) / period_us;
 
-    /* Loop iterations for half-period (~4 loops per us @ 8MHz) */
-    uint32_t delay_cnt = half_period * 2;
-
     for (uint32_t i = 0; i < cycles; i++) {
         GPIOB_BOP = (1 << 0);
-        delay_cycles(delay_cnt);
+        delay_us(half_period);
         GPIOB_BC = (1 << 0);
-        delay_cycles(delay_cnt);
+        delay_us(half_period);
     }
 }
 
@@ -197,21 +230,64 @@ void system_enter_bootloader(void)
     /* 1. Disable all interrupts */
     __asm__ volatile("cpsid i");
 
-    /* 2. De-assert and reset peripherals */
+    /* 2. Disable SysTick */
+    *(volatile uint32_t *)0xE000E010 = 0;
+    *(volatile uint32_t *)0xE000E014 = 0;
+    *(volatile uint32_t *)0xE000E018 = 0;
+
+    /* 3. Disable all NVIC interrupts and clear pending flags */
+    *(volatile uint32_t *)0xE000E180 = 0xFFFFFFFF;
+    *(volatile uint32_t *)0xE000E280 = 0xFFFFFFFF;
+
+    /* 4. Reset clock to internal 8MHz IRC8M, disable PLL and reset all prescalers */
+    RCU_CTL |= (1 << 0);
+    while ((RCU_CTL & (1 << 1)) == 0);
+    RCU_CFG0 &= ~3U;
+    while ((RCU_CFG0 & (3U << 2)) != 0);
+    RCU_CTL &= ~(1 << 24); /* Disable PLL */
+    while ((RCU_CTL & (1 << 25)) != 0);
+    RCU_CFG0 = 0x00000000; /* Factory default: AHB=/1, APB1=/1 (8MHz), APB2=/1 */
+
+    /* Reset Flash latency to 0 wait states */
+    *(volatile uint32_t *)0x40022000 &= ~7U;
+
+    /* 5. Reset and disable APB1 and APB2 peripherals */
     RCU_APB1RST = 0xFFFFFFFF;
     RCU_APB1RST = 0;
     RCU_APB2RST = 0xFFFFFFFF;
     RCU_APB2RST = 0;
+    RCU_APB1EN = 0;
+    RCU_APB2EN = 0;
 
-    /* 3. Remap system memory to 0x00000000 or jump directly to ROM loader at 0x1FFFEC00 */
+    /* 6. Hold power latches and power CO2 sensor so PA10 (USART0_RX) stays IDLE HIGH (3.3V) */
+    RCU_AHBEN |= (1 << 17) | (1 << 18) | (1 << 19); /* GPIOA, GPIOB, GPIOC */
+
+    /* PC15 = 1 (Main DC-DC) */
+    uint32_t ctl_c = GPIO_CTL(GPIOC_BASE);
+    ctl_c &= ~(3U << (15 * 2));
+    ctl_c |=  (1U << (15 * 2));
+    GPIO_CTL(GPIOC_BASE) = ctl_c;
+    GPIO_BOP(GPIOC_BASE) = (1 << 15);
+
+    /* PB3 = 1 (Periph), PB9 = 1 (CO2 Pwr), PB11 = 1 (5V Boost) */
+    uint32_t ctl_b = GPIO_CTL(GPIOB_BASE);
+    ctl_b &= ~((3U << (3 * 2)) | (3U << (9 * 2)) | (3U << (11 * 2)));
+    ctl_b |=  ((1U << (3 * 2)) | (1U << (9 * 2)) | (1U << (11 * 2)));
+    GPIO_CTL(GPIOB_BASE) = ctl_b;
+    GPIO_BOP(GPIOB_BASE) = (1 << 3) | (1 << 9) | (1 << 11);
+
+    /* 7. Set Vector Table to System Memory */
     uint32_t boot_addr = 0x1FFFEC00;
+    SCB_VTOR = boot_addr;
+
+    /* 7. Read stack pointer and reset handler from bootloader vector */
     uint32_t msp_val = *(volatile uint32_t *)(boot_addr);
     uint32_t pc_val  = *(volatile uint32_t *)(boot_addr + 4);
 
-    SCB_VTOR = boot_addr;
-
+    /* 8. Load MSP, re-enable interrupts (PRIMASK=0) and jump to bootloader */
     __asm__ volatile(
         "msr msp, %0\n"
+        "cpsie i\n"
         "bx  %1\n"
         :
         : "r"(msp_val), "r"(pc_val)

@@ -112,7 +112,7 @@
 #define FWDGT_KEY_ACCESS    0x5555
 
 /* ── Clock Frequency ── */
-#define SYSTEM_CLOCK_HZ 8000000UL
+#define SYSTEM_CLOCK_HZ 72000000UL
 
 /* ── Delays ── */
 static inline void delay_cycles(uint32_t n)
@@ -124,16 +124,17 @@ static inline void delay_cycles(uint32_t n)
 
 static inline void delay_us(uint32_t us)
 {
-    /* ~2 cycles per loop @ 8MHz = 0.25us per loop -> 4 loops per us */
-    while (us--) {
-        delay_cycles(2);
+    uint32_t loops_per_us = SYSTEM_CLOCK_HZ / 2000000UL;
+    uint32_t total = us * loops_per_us;
+    while (total--) {
+        __asm__ volatile("");
     }
 }
 
 static inline void delay_ms(uint32_t ms)
 {
     while (ms--) {
-        delay_cycles(2000);
+        delay_us(1000);
     }
 }
 

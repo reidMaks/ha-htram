@@ -8,7 +8,7 @@
 
 static inline void i2c_delay(void)
 {
-    delay_cycles(40); /* ~5us @ 8MHz = ~100kHz I2C */
+    delay_us(20); /* Slow down I2C to ~25kHz to match original behavior and account for weak pull-ups */
 }
 
 static inline void sda_mode_input(void)
@@ -60,19 +60,19 @@ static int i2c_write_byte(uint8_t byte)
     sda_mode_output();
     for (int i = 7; i >= 0; i--) {
         GPIOB_BC = (1 << SCL_PIN);
-        i2c_delay();
         if (byte & (1 << i))
             GPIOB_BOP = (1 << SDA_PIN);
         else
             GPIOB_BC  = (1 << SDA_PIN);
+        i2c_delay();
         GPIOB_BOP = (1 << SCL_PIN);
         i2c_delay();
     }
     GPIOB_BC = (1 << SCL_PIN);
+    sda_mode_input();
     i2c_delay();
 
     /* Read ACK */
-    sda_mode_input();
     GPIOB_BOP = (1 << SCL_PIN);
     i2c_delay();
     int ack = (sda_read() == 0) ? 1 : 0;
@@ -348,6 +348,6 @@ void sensors_init(void)
     GPIO_AFSEL1(GPIOA_BASE) |= (1 << ((9 - 8) * 4)) | (1 << ((10 - 8) * 4)); /* AF1 = USART0 */
 
     USART0_CTL0 = 0;
-    USART0_BAUD = 0x0341; /* 8MHz / 9600 = 833 (0x0341) */
+    USART0_BAUD = SYSTEM_CLOCK_HZ / 9600;
     USART0_CTL0 = USART_UEN | USART_TEN | USART_REN;
 }

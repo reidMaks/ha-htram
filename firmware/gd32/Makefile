@@ -10,6 +10,7 @@ SRCS    = src/main.c \
           src/sensors.c \
           src/periph.c \
           src/protocol_engine.c \
+          src/flasher.c \
           src/startup.c
 
 BUILD_DIR = build

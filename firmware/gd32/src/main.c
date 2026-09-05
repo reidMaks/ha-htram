@@ -120,22 +120,57 @@ int main(void)
 
         /* Poll Button SW1. Reported to the ESP32 via STATUS_FLAG_BUTTON_PRESSED
          * (spec §9.8: app-level button logic lives on the ESP).
-         *
-         * Long-press power-off is intentionally NOT wired up here. Bench-proven
-         * (2026-09-04): releasing PC15 -- plus PB3 and PA1 -- does NOT cut the
-         * main DC-DC. On battery with no external supply the rail stayed up
-         * (display backlight lit, CO2 sensor still powered); only the MCU
-         * stopped. So PC15 is not the master kill, and the real factory
-         * power-off sequence has to be recovered from the dump before this can
-         * be done without hanging the device. */
+         */
         int btn = periph_read_button();
+        static uint32_t btn_hold_ticks = 0;
+
+        if (btn) {
+            btn_hold_ticks++;
+            if (btn_hold_ticks == 600) { /* 3 seconds */
+                periph_beep(2000, 100);
+                
+                /* STANDBY MODE ENTRY */
+                display_fill_screen(COLOR_BLACK);
+                delay_ms(100);
+
+                /* Kill Peripherals */
+                GPIOB_BC = (1 << 8); /* Backlight OFF */
+                GPIOB_BC = (1 << 11) | (1 << 9); /* Sensor Power OFF */
+                periph_set_leds(0, 0, 0, 0); /* LEDs OFF (this correctly sets data pins LOW) */
+                GPIOA_BC = (1 << 1); /* VLED OFF */
+                *(volatile uint32_t *)(GPIOF_BASE + 0x14) = (1 << 7); /* GPIOF_BC = PF7 OFF */
+                GPIOB_BC = (1 << 3); /* PB3 OFF */
+
+                /* Wait for button release */
+                while(periph_read_button()) delay_ms(10);
+
+                /* Wait for next long press to wake up */
+                uint32_t wakeup_ticks = 0;
+                while(1) {
+                    if (periph_read_button()) {
+                        wakeup_ticks++;
+                        if (wakeup_ticks > 400) { /* 2 seconds */
+                            /* Hard Reset MCU */
+                            *(volatile uint32_t *)0xE000ED0C = (0x5FA << 16) | (1 << 2);
+                            while(1);
+                        }
+                    } else {
+                        wakeup_ticks = 0;
+                    }
+                    delay_ms(5);
+                }
+            }
+        } else {
+            btn_hold_ticks = 0;
+        }
+
         if (btn && !button_prev) {
             periph_beep(2304, 20); /* press feedback */
         }
         button_prev = btn;
 
-        /* SHT30 & Battery Poll (every 1000ms: 200 ticks of 5ms) */
-        if (tick_5ms - last_sht_tick >= 200) {
+        /* SHT30 & Battery Poll (every 30000ms: 6000 ticks of 5ms) */
+        if (tick_5ms - last_sht_tick >= 6000) {
             last_sht_tick = tick_5ms;
 
             /* Read actual battery voltage & USB charging state */
@@ -149,8 +184,8 @@ int main(void)
             }
         }
 
-        /* CRIR M1 CO2 Poll (every 2500ms: 500 ticks of 5ms) */
-        if (tick_5ms - last_co2_tick >= 500) {
+        /* CRIR M1 CO2 Poll (every 30000ms: 6000 ticks of 5ms) */
+        if (tick_5ms - last_co2_tick >= 6000) {
             last_co2_tick = tick_5ms;
             uint8_t wm = 0;
             if (sensors_poll_co2(&co2_ppm, &wm) == 0) {
@@ -158,8 +193,8 @@ int main(void)
             }
         }
 
-        /* Send Uplink Telemetry (every 1500ms: 300 ticks of 5ms) */
-        if (tick_5ms - last_telemetry_tick >= 300) {
+        /* Send Uplink Telemetry (every 30000ms: 6000 ticks of 5ms) */
+        if (tick_5ms - last_telemetry_tick >= 6000) {
             last_telemetry_tick = tick_5ms;
 
             uint8_t status = 0;
