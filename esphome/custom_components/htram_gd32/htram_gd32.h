@@ -19,6 +19,12 @@ class HtramGd32Component : public Component, public uart::UARTDevice {
  public:
   void setup() override;
   void loop() override;
+
+  /* The GD32 asks us to hold the pixel stream while it does something that
+     blocks longer than its 2 KB RX ring can absorb (a CO2 Modbus poll). There
+     are no RTS/CTS wires, so the request arrives as a packet on the uplink. */
+  bool flow_paused() const { return this->flow_paused_; }
+  void wait_for_flow(uint32_t timeout_ms);
   void dump_config() override;
 
   void set_co2_sensor(sensor::Sensor *s) { co2_sensor_ = s; }
@@ -53,6 +59,8 @@ class HtramGd32Component : public Component, public uart::UARTDevice {
   std::string execute_ota(const std::vector<uint8_t> &firmware);
 
  protected:
+  bool flow_paused_{false};
+
   sensor::Sensor *co2_sensor_{nullptr};
   sensor::Sensor *temp_sensor_{nullptr};
   sensor::Sensor *hum_sensor_{nullptr};

@@ -14,6 +14,7 @@
 #define PKT_TYPE_TELEMETRY          0x01
 #define PKT_TYPE_HELLO              0x02
 #define PKT_TYPE_BUTTON             0x03
+#define PKT_TYPE_FLOW               0x04
 
 #define CMD_TYPE_DRAW_RECT          0x10
 #define CMD_TYPE_SET_BACKLIGHT      0x11
@@ -69,6 +70,21 @@ typedef struct {
     uint16_t duration_ms;   /* ms button was held (0 on press) */
     uint16_t crc16;         /* CRC-16-CCITT */
 } pkt_button_event_t;
+
+/* Software flow control for the ESP -> GD32 pixel stream.
+ *
+ * There are no RTS/CTS wires between the two chips, and XON/XOFF cannot ride
+ * the pixel stream because 0x11/0x13 occur inside RGB565 data. The reverse
+ * channel, however, already carries framed packets, so the hold-off travels
+ * there: the GD32 asks the ESP to stop before it blocks for longer than the
+ * 2 KB RX ring can absorb (22 ms at 921600), and releases it afterwards. */
+typedef struct {
+    uint8_t magic0;         /* 0xAA */
+    uint8_t magic1;         /* 0x55 */
+    uint8_t type;           /* 0x04 */
+    uint8_t resume;         /* 0 = hold off, 1 = resume */
+    uint16_t crc16;         /* CRC-16-CCITT */
+} pkt_flow_t;
 
 typedef struct {
     uint8_t magic0;         /* 0xAA */

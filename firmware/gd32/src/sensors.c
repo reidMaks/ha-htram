@@ -168,22 +168,23 @@ static uint8_t sht30_crc8(const uint8_t *data, int len)
 #define SHT30_T_OFFSET_001C     650   /* subtract 6.50 C  -- bench-calibrated */
 #define SHT30_RH_OFFSET_001PCT  1555  /* add 15.55 %RH    -- bench-calibrated */
 
-int sensors_read_sht30(int16_t *temp_001c, uint16_t *hum_001pct)
+int sensors_sht30_start(void)
 {
-    uint8_t buf[6];
-
     /* Single-shot measurement (0x2400): SHT30 sleeps in 0.2uA mode between measurements */
     i2c_start();
     if (!i2c_write_byte(0x88)) { i2c_stop(); return -1; }
     if (!i2c_write_byte(0x24)) { i2c_stop(); return -2; }
     if (!i2c_write_byte(0x00)) { i2c_stop(); return -3; }
     i2c_stop();
+    return 0;
+}
 
-    /* SHT30 high-repeatability single-shot needs up to 15.5 ms to convert. The
-     * delay_ms() calibration runs short at full core speed (it was only masked
-     * while a debugger throttled SRAM execution ~3x), so give generous margin
-     * rather than sit right on the datasheet limit and read stale/NAKed data. */
-    delay_ms(40);
+/* Call no sooner than SHT30_CONVERSION_MS after sensors_sht30_start(). The
+ * datasheet limit for high repeatability is 15.5 ms; the margin is kept
+ * because delay_ms() calibration runs short at full core speed. */
+int sensors_sht30_fetch(int16_t *temp_001c, uint16_t *hum_001pct)
+{
+    uint8_t buf[6];
 
     i2c_start();
     if (!i2c_write_byte(0x89)) { i2c_stop(); return -4; }

@@ -17,7 +17,7 @@
 #include "periph.h"
 
 #ifndef GD32_UART_BAUD
-#define GD32_UART_BAUD 115200UL
+#define GD32_UART_BAUD 921600UL
 #endif
 
 
@@ -183,28 +183,50 @@ int main(void)
             }
         }
 
-        /* SHT30 & Battery Poll (every 30000ms) */
-        if (now - last_sht_ms >= 30000) {
+        /* SHT30 & Battery Poll (every 30000ms).
+         * The conversion wait belongs to the loop, not to the driver: blocking
+         * 40 ms here would overrun the RX ring at 921600 (22 ms of slack). */
+        static uint32_t sht_started_ms = 0;
+        static uint8_t sht_pending = 0;
+
+        if (!sht_pending && now - last_sht_ms >= 30000) {
             last_sht_ms = now;
 
             /* Read actual battery voltage & USB charging state */
             periph_read_battery(&batt_mv, &is_usb_present, &is_charging);
 
-            /* Read SHT30 with thermal compensation */
-            if (sensors_read_sht30(&temp_001c, &hum_001pct) != 0) {
-                sensor_err = 1;
+            if (sensors_sht30_start() == 0) {
+                sht_pending = 1;
+                sht_started_ms = now ? now : 1;
             } else {
-                sensor_err = 0;
+                sensor_err = 1;
             }
         }
 
-        /* CRIR M1 CO2 Poll (every 30000ms) */
+        if (sht_pending && (now - sht_started_ms >= SHT30_CONVERSION_MS)) {
+            sht_pending = 0;
+            sensor_err = (sensors_sht30_fetch(&temp_001c, &hum_001pct) != 0) ? 1 : 0;
+        }
+
+        /* CRIR M1 CO2 Poll (every 30000ms).
+         * This one cannot be split the same way: it is a Modbus exchange with
+         * per-byte timeouts, up to 300 ms on the first byte. Instead the ESP is
+         * asked to hold the pixel stream, given a moment for whatever is
+         * already in flight to land, and released afterwards. */
         if (now - last_co2_ms >= 30000) {
             last_co2_ms = now;
+
+            protocol_send_flow(0);
+            uint32_t drain_start = periph_millis();
+            while (periph_millis() - drain_start < 8)
+                protocol_process_rx();
+
             uint8_t wm = 0;
             if (sensors_poll_co2(&co2_ppm, &wm) == 0) {
                 warmup = wm;
             }
+
+            protocol_send_flow(1);
         }
 
         /* Send Uplink Telemetry (every 30000ms) */

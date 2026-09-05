@@ -87,6 +87,9 @@ void HtramGd32Component::loop() {
       } else if (type == 0x03) {
         // pkt_button_event_t: magic(2)+type(1)+state(1)+duration_ms(2)+crc16(2) = 8 bytes
         expected_len = 8;
+      } else if (type == 0x04) {
+        // pkt_flow_t: magic(2)+type(1)+resume(1)+crc16(2) = 6 bytes
+        expected_len = 6;
       } else {
         ESP_LOGW(TAG, "Unknown packet type: 0x%02X", type);
         rx_buffer_.clear();
@@ -163,6 +166,10 @@ void HtramGd32Component::process_packet_(const uint8_t *data, size_t len) {
       fw_version_ = ver;
       this->fw_version_sensor_->publish_state(ver);
     }
+  } else if (type == 0x04) {
+    // pkt_flow_t: resume(1). 0 = hold off the pixel stream, 1 = carry on.
+    this->flow_paused_ = (data[3] == 0);
+    ESP_LOGD(TAG, "GD32 flow control: %s", this->flow_paused_ ? "PAUSE" : "RESUME");
   } else if (type == 0x03) {
     // pkt_button_event_t: state(1) duration_ms(2 LE)
     uint8_t state = data[3];
@@ -760,6 +767,22 @@ void HtramGd32Display::draw_pixel_at(int x, int y, Color color) {
   this->parent_->send_draw_rect(x, y, 1, 1, data, 2);
 }
 
+void HtramGd32Component::wait_for_flow(uint32_t timeout_ms) {
+  if (!this->flow_paused_)
+    return;
+  const uint32_t start = millis();
+  while (this->flow_paused_ && millis() - start < timeout_ms) {
+    this->loop();  // keep parsing the uplink so RESUME can land
+    App.feed_wdt();
+    delay(1);
+  }
+  if (this->flow_paused_) {
+    // A lost RESUME must not wedge the display for good.
+    ESP_LOGW(TAG, "flow control still paused after %u ms, resuming anyway", timeout_ms);
+    this->flow_paused_ = false;
+  }
+}
+
 void HtramGd32Display::draw_pixels_at(int x_start, int y_start, int w, int h, const uint8_t *ptr,
                                       display::ColorOrder order, display::ColorBitness bitness,
                                       bool big_endian, int x_offset, int y_offset, int x_pad) {
@@ -767,8 +790,13 @@ void HtramGd32Display::draw_pixels_at(int x_start, int y_start, int w, int h, co
   if (w <= 0 || h <= 0) return;
   if (x_start >= 240 || y_start >= 240) return;
 
+  ESP_LOGV(TAG, "draw_rect x=%d y=%d w=%d h=%d -> %d B (%.2f s @115200)", x_start, y_start, w, h,
+           w * h * 2, (w * h * 2 + 11) / 11520.0f);
+
   int stride = x_offset + w + x_pad;
-  const int max_bytes_per_chunk = 2048;
+  // Sized well under the GD32's 2 KB ring: a chunk already in flight when the
+  // hold-off is raised still has to fit in whatever ring space is left.
+  const int max_bytes_per_chunk = 512;
   const int bytes_per_pixel = 2;  // RGB565
 
   int max_rows_per_chunk = max_bytes_per_chunk / (w * bytes_per_pixel);
@@ -800,6 +828,7 @@ void HtramGd32Display::draw_pixels_at(int x_start, int y_start, int w, int h, co
       }
     }
 
+    this->parent_->wait_for_flow(1200);
     this->parent_->send_draw_rect(x_start, cur_y, w, cur_h, this->chunk_buffer_.data(), chunk_len);
     App.feed_wdt();
     delay(1);

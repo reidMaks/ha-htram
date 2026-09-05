@@ -149,6 +149,18 @@ void protocol_send_button_event(uint8_t state, uint16_t duration_ms)
     uart1_write((const uint8_t *)&pkt, sizeof(pkt));
 }
 
+void protocol_send_flow(uint8_t resume)
+{
+    pkt_flow_t pkt;
+    pkt.magic0 = PROTOCOL_MAGIC0;
+    pkt.magic1 = PROTOCOL_MAGIC1;
+    pkt.type = PKT_TYPE_FLOW;
+    pkt.resume = resume;
+    pkt.crc16 = crc16_ccitt(&pkt.type, sizeof(pkt) - 4);
+
+    uart1_write((const uint8_t *)&pkt, sizeof(pkt));
+}
+
 /* ── RX Parsing State Machine ── */
 
 typedef enum {

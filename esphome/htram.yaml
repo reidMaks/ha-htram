@@ -1,6 +1,8 @@
 substitutions:
   name: htram
   friendly_name: HTRAM
+  # Home Assistant weather entity the outdoor slot reads from.
+  weather_entity: weather.forecast_home
 
 esphome:
   name: ${name}
@@ -20,6 +22,14 @@ logger:
 api:
   encryption:
     key: !secret api_key
+  # The status pocket shows a warning when the link drops: with no HA there is
+  # no outdoor temperature and the clock will start to drift.
+  on_client_connected:
+    - lambda: id(ha_link) = true;
+    - script.execute: refresh_pocket
+  on_client_disconnected:
+    - lambda: id(ha_link) = false;
+    - script.execute: refresh_pocket
   services:
     - service: beep
       variables:
@@ -85,7 +95,11 @@ uart:
   id: uart_bus
   tx_pin: GPIO17
   rx_pin: GPIO16
-  baud_rate: 115200
+  # 921600 since the GD32 stopped blocking its main loop for longer than the
+  # 2 KB RX ring can absorb (SHT30 split in two, CO2 poll behind flow control).
+  # The resident flasher inherits USART1_BAUD from the firmware, so GD32 OTA
+  # runs at this speed too.
+  baud_rate: 921600
 
 htram_gd32:
   id: htram_core
@@ -97,51 +111,162 @@ display:
     update_interval: never
 
 font:
-  - file: "fonts/NotoSans-Regular.ttf"
-    id: font_ukr_14
-    size: 14
+  # Digits only, and pre-slanted: ESPHome renders from the TTF at build time and
+  # LVGL has no shear, so the 12 deg oblique is baked into the file by
+  # tools/fonts/make_oblique.py. 4 bpp matters here — the ExtraLight stem is
+  # 5 px wide and 1 bpp would shred it.
+  - file: "fonts/DejaVuSans-ExtraLight-Oblique.ttf"
+    id: font_clock
+    size: 88
+    bpp: 4
+    glyphs: "0123456789-"
+
+  # The caption line stays upright.
+  - file: "fonts/DejaVuSans-ExtraLight.ttf"
+    id: font_slot
+    size: 15
+    bpp: 4
+    glyphs: "0123456789.,:%-+ °"
     glyphsets:
       - GF_Cyrillic_Core
 
+globals:
+  - id: ha_link
+    type: bool
+    restore_value: false
+    initial_value: "false"
+  - id: slot_idx
+    type: int
+    restore_value: false
+    initial_value: "0"
+  - id: led_auto
+    type: bool
+    restore_value: true
+    initial_value: "true"
+
 script:
-  - id: update_clock_display
+  # Hours and minutes are separate labels: only the minutes row is dirty most of
+  # the time, and staggering them needs independent x offsets anyway.
+  - id: refresh_clock
     then:
       - lambda: |-
           auto now = id(ha_time).now();
           if (!now.is_valid()) return;
+          // lv_label_set_text invalidates unconditionally, so each digit is
+          // written only when it actually changed.
+          static int prev[4] = {-1, -1, -1, -1};
+          const int cur[4] = {now.hour / 10, now.hour % 10,
+                              now.minute / 10, now.minute % 10};
+          lv_obj_t *const lbl[4] = {id(ui_h1), id(ui_h2), id(ui_m1), id(ui_m2)};
+          char buf[2] = {0, 0};
+          for (int i = 0; i < 4; i++) {
+            if (cur[i] == prev[i]) continue;
+            prev[i] = cur[i];
+            buf[0] = '0' + cur[i];
+            lv_label_set_text(lbl[i], buf);
+          }
 
-          char t_buf[16];
-          snprintf(t_buf, sizeof(t_buf), "%02d:%02d", now.hour, now.minute);
-          lv_label_set_text(id(ui_clock), t_buf);
+  # One caption line, three facts, rotating every 7 s.
+  - id: refresh_slot
+    then:
+      - lambda: |-
+          char buf[48];
+          switch (id(slot_idx)) {
+            case 0: {
+              auto now = id(ha_time).now();
+              if (!now.is_valid()) return;
+              static const char *const DAYS[] = {"", "Нд", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"};
+              // Three letters, not the full month: "Пн, 22 листопада" is 138 px
+              // and the content circle only offers 117 px at this baseline.
+              static const char *const MONTHS[] = {
+                  "", "січ", "лют", "бер", "кві", "тра", "чер",
+                  "лип", "сер", "вер", "жов", "лис", "гру"};
+              snprintf(buf, sizeof(buf), "%s, %d %s",
+                       DAYS[now.day_of_week >= 1 && now.day_of_week <= 7 ? now.day_of_week : 0],
+                       now.day_of_month,
+                       MONTHS[now.month >= 1 && now.month <= 12 ? now.month : 0]);
+              break;
+            }
+            case 1: {
+              if (isnan(id(outdoor_temp).state)) { snprintf(buf, sizeof(buf), "--° надворі"); break; }
+              // The condition replaces the last word rather than adding a glyph:
+              // a 1.8 mm pictogram is ambiguous where a 1.2 mm word is not.
+              std::string w = id(outdoor_cond).state;
+              const char *word = "надворі";
+              if (w == "rainy" || w == "pouring" || w == "lightning-rainy" || w == "hail") word = "дощ";
+              else if (w == "snowy" || w == "snowy-rainy") word = "сніг";
+              else if (w == "windy" || w == "windy-variant") word = "вітер";
+              snprintf(buf, sizeof(buf), "%.0f° %s", id(outdoor_temp).state, word);
+              break;
+            }
+            default: {
+              if (isnan(id(sensor_temp).state) || isnan(id(sensor_hum).state)) return;
+              snprintf(buf, sizeof(buf), "%.1f°  %.0f%%",
+                       id(sensor_temp).state, id(sensor_hum).state);
+              break;
+            }
+          }
+          lv_label_set_text(id(ui_slot), buf);
 
-          static const char *const UKR_DAYS[] = {"", "Нд", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"};
-          static const char *const UKR_MONTHS[] = {
-              "", "січня", "лютого", "березня", "квітня", "травня", "червня",
-              "липня", "серпня", "вересня", "жовтня", "листопада", "грудня"
-          };
-          char d_buf[64];
-          const char *day_str = (now.day_of_week >= 1 && now.day_of_week <= 7) ? UKR_DAYS[now.day_of_week] : "";
-          const char *mon_str = (now.month >= 1 && now.month <= 12) ? UKR_MONTHS[now.month] : "";
-          snprintf(d_buf, sizeof(d_buf), "%s, %d %s", day_str, now.day_of_month, mon_str);
-          lv_label_set_text(id(ui_date), d_buf);
+  # The pocket is empty whenever nothing needs the eye. Percentage rather than a
+  # battery glyph: at 1.8 mm a glyph is mush and "62%" is not.
+  - id: refresh_pocket
+    then:
+      - lambda: |-
+          if (!id(ha_link)) {
+            lv_label_set_text(id(ui_pocket), "!");
+            lv_obj_set_style_text_color(id(ui_pocket), lv_color_hex(0xFF9E3D), LV_PART_MAIN);
+            return;
+          }
+          if (!id(sensor_usb).state && !isnan(id(sensor_batt_level).state)) {
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%.0f%%", id(sensor_batt_level).state);
+            lv_label_set_text(id(ui_pocket), buf);
+            lv_obj_set_style_text_color(id(ui_pocket),
+                lv_color_hex(id(sensor_batt_level).state < 20 ? 0xFF9E3D : 0x707880), LV_PART_MAIN);
+            return;
+          }
+          lv_label_set_text(id(ui_pocket), "");
+
+  # CO2 moved off the screen and onto the LEDs above it, so they have to
+  # actually track it now.
+  - id: refresh_leds
+    then:
+      - lambda: |-
+          if (!id(led_auto) || isnan(id(sensor_co2).state)) return;
+          uint16_t ppm = (uint16_t) id(sensor_co2).state;
+          id(htram_core)->send_leds(ppm >= 1500, ppm >= 1000 && ppm < 1500, ppm < 1000, 0);
 
 interval:
   - interval: 1s
     then:
       - lambda: |-
-          static int last_min = -1;
           auto now = id(ha_time).now();
-          if (now.is_valid() && now.minute != last_min) {
+          if (!now.is_valid()) return;
+          // Moving the dot invalidates only where it was and where it lands.
+          float a = (now.second * 6.0f - 90.0f) * 3.14159265f / 180.0f;
+          lv_obj_set_pos(id(ui_secdot),
+                         (lv_coord_t) lroundf(120.0f + 106.0f * cosf(a) - 3.5f),
+                         (lv_coord_t) lroundf(120.0f + 106.0f * sinf(a) - 3.5f));
+          static int last_min = -1;
+          if (now.minute != last_min) {
             last_min = now.minute;
-            id(update_clock_display).execute();
+            id(refresh_clock).execute();
+            if (id(slot_idx) == 0) id(refresh_slot).execute();
           }
+
+  - interval: 7s
+    then:
+      - lambda: id(slot_idx) = (id(slot_idx) + 1) % 3;
+      - script.execute: refresh_slot
 
 time:
   - platform: homeassistant
     id: ha_time
     on_time_sync:
       then:
-        - script.execute: update_clock_display
+        - script.execute: refresh_clock
+        - script.execute: refresh_slot
 
 lvgl:
   displays:
@@ -162,89 +287,98 @@ lvgl:
         bg_opa: cover
         scrollable: false
         widgets:
-          - label:
-              id: ui_clock
-              align: top_mid
-              y: 26
-              text_font: montserrat_20
-              text_color: 0xEEEEEE
-              text: "--:--"
-
-          - label:
-              id: ui_date
-              align: top_mid
-              y: 50
-              text_font: font_ukr_14
-              text_color: 0x888888
-              text: ""
-
-          - line:
-              id: ui_co2_trend
+          # A swept arc looked right but cost 8.9 s of UART once a minute: at the
+          # 59->0 wrap LVGL invalidates the whole 214x214 ring at once, and at
+          # 115200 that is a two-thirds-of-a-screen repaint. Measured on the
+          # device as "lvgl took a long time for an operation (8853 ms)".
+          #
+          # So the ring is now a static outline that is drawn once and never
+          # touched, and the seconds are a dot orbiting it. The wrap becomes
+          # just another 7 px move, and the whole thing costs ~40 ms/s.
+          - obj:
+              id: ui_ring
               align: center
-              y: 20
-              line_width: 2
-              line_color: 0x00E676
-              line_opa: 50%
-              line_rounded: true
-              points:
-                - [40, 150]
-                - [60, 150]
-                - [80, 150]
-                - [100, 150]
-                - [120, 150]
-                - [140, 150]
-                - [160, 150]
-                - [180, 150]
-                - [200, 150]
-
-          - label:
-              id: ui_co2_val
-              align: center
-              y: -12
-              text_font: montserrat_40
-              text_color: 0x00E676
-              text: "---"
-
-          - label:
-              id: ui_co2_unit
-              align: center
-              y: 22
-              text_font: montserrat_12
-              text_color: 0x777777
-              text: "PPM  CO2"
-
-          - label:
-              id: ui_co2_status
-              align: center
-              y: 38
-              text_font: montserrat_12
-              text_color: 0x00E676
-              text: "INITIALIZING..."
+              width: 214
+              height: 214
+              radius: 107
+              bg_opa: TRANSP
+              border_width: 2
+              border_color: 0xB9AFA3
+              border_opa: 30%
+              pad_all: 0
+              scrollable: false
+              clickable: false
 
           - obj:
-              align: center
-              y: 54
-              width: 140
-              height: 1
-              bg_color: 0x222222
+              id: ui_secdot
+              x: 116
+              y: 10
+              width: 7
+              height: 7
+              radius: 4
+              bg_color: 0xB9AFA3
+              bg_opa: cover
               border_width: 0
               pad_all: 0
+              scrollable: false
+              clickable: false
+
+          # Staggered +/-16 px. The clock face carries tight vertical metrics
+          # (ascender clamped to the digits), so the line box is 67 px rather
+          # than 102 and y addresses the ink directly — which also stops the two
+          # rows overlapping, so LVGL no longer merges them into one repaint.
+          # One label per digit. Only the digit that actually changed is
+          # invalidated, so nine minutes out of ten the repaint is a single
+          # 57x67 box instead of the whole 113 px pair.
+          - label:
+              id: ui_h1
+              align: top_mid
+              x: -44
+              y: 44
+              text_font: font_clock
+              text_color: 0xF0EAE0
+              text: "-"
+          - label:
+              id: ui_h2
+              align: top_mid
+              x: 12
+              y: 44
+              text_font: font_clock
+              text_color: 0xF0EAE0
+              text: "-"
+          - label:
+              id: ui_m1
+              align: top_mid
+              x: -12
+              y: 115
+              text_font: font_clock
+              text_color: 0xF0EAE0
+              text: "-"
+          - label:
+              id: ui_m2
+              align: top_mid
+              x: 44
+              y: 115
+              text_font: font_clock
+              text_color: 0xF0EAE0
+              text: "-"
 
           - label:
-              id: ui_env
-              align: center
-              y: 72
-              text_font: montserrat_16
-              text_color: 0x00E5FF
-              text: "--.-°C   --%"
-
-          - label:
-              id: ui_batt
+              id: ui_slot
               align: bottom_mid
-              y: -22
-              text_font: montserrat_12
-              text_color: 0x888888
-              text: "BATTERY"
+              y: -32
+              text_font: font_slot
+              text_color: 0x707880
+              text: ""
+
+          - label:
+              id: ui_pocket
+              align: top_right
+              x: -52
+              y: 52
+              text_font: font_slot
+              text_color: 0x707880
+              text: ""
 
 sensor:
   - platform: wifi_signal
@@ -252,91 +386,40 @@ sensor:
     update_interval: 30s
   - platform: uptime
     name: "Uptime"
+
+  # Outdoor temperature for the middle slot position — the one thing the smart
+  # home adds that the device could never know by itself.
+  - platform: homeassistant
+    id: outdoor_temp
+    entity_id: ${weather_entity}
+    attribute: temperature
+    on_value:
+      - lambda: if (id(slot_idx) == 1) id(refresh_slot).execute();
+
   - platform: htram_gd32
     co2:
       name: "CO2"
       id: sensor_co2
       on_value:
-        - lvgl.label.update:
-            id: ui_co2_val
-            text:
-              format: "%.0f"
-              args: ['x']
-        - lambda: |-
-            uint16_t ppm = (uint16_t)x;
-            uint32_t color = 0x00E676; // Green
-            const char* status = "EXCELLENT";
-            if (ppm >= 1500) {
-              color = 0xFF1744; // Red
-              status = "VENTILATE NOW!";
-            } else if (ppm >= 1000) {
-              color = 0xFFD600; // Yellow
-              status = "POOR AIR";
-            } else if (ppm >= 800) {
-              color = 0xAEEA00; // Lime
-              status = "MODERATE";
-            }
-            lv_obj_set_style_text_color(id(ui_co2_val), lv_color_hex(color), LV_PART_MAIN);
-            lv_obj_set_style_line_color(id(ui_co2_trend)->obj, lv_color_hex(color), LV_PART_MAIN);
-            lv_obj_set_style_text_color(id(ui_co2_status), lv_color_hex(color), LV_PART_MAIN);
-            lv_label_set_text(id(ui_co2_status), status);
-
-            // Update trend line history
-            static lv_point_precise_t trend_pts[17];
-            static float co2_hist[17] = {0};
-            static int hist_count = 0;
-
-            if (hist_count < 17) {
-              co2_hist[hist_count++] = x;
-            } else {
-              for (int i = 0; i < 16; i++) {
-                co2_hist[i] = co2_hist[i+1];
-              }
-              co2_hist[16] = x;
-            }
-
-            for (int i = 0; i < hist_count; i++) {
-              trend_pts[i].x = 40 + i * 10;
-              float val = co2_hist[i];
-              if (val < 400.0f) val = 400.0f;
-              if (val > 2000.0f) val = 2000.0f;
-              trend_pts[i].y = (int32_t)(160 - ((val - 400.0f) / 1600.0f) * 30.0f);
-            }
-            if (hist_count > 1) {
-              lv_line_set_points(id(ui_co2_trend)->obj, trend_pts, hist_count);
-            }
+        - script.execute: refresh_leds
     temperature:
       name: "Temperature"
       id: sensor_temp
       on_value:
-        - lambda: |-
-            char buf[32];
-            if (!isnan(id(sensor_temp).state) && !isnan(id(sensor_hum).state)) {
-              snprintf(buf, sizeof(buf), "%.1f°C   %.0f%%", id(sensor_temp).state, id(sensor_hum).state);
-              lv_label_set_text(id(ui_env), buf);
-            }
+        - lambda: if (id(slot_idx) == 2) id(refresh_slot).execute();
     humidity:
       name: "Humidity"
       id: sensor_hum
       on_value:
-        - lambda: |-
-            char buf[32];
-            if (!isnan(id(sensor_temp).state) && !isnan(id(sensor_hum).state)) {
-              snprintf(buf, sizeof(buf), "%.1f°C   %.0f%%", id(sensor_temp).state, id(sensor_hum).state);
-              lv_label_set_text(id(ui_env), buf);
-            }
+        - lambda: if (id(slot_idx) == 2) id(refresh_slot).execute();
     battery:
       name: "Battery Voltage"
       id: sensor_batt_mv
-      on_value:
-        - lambda: |-
-            char buf[32];
-            const char *mode = id(sensor_usb).state ? (id(sensor_chrg).state ? "[CHRG]" : "[USB]") : "";
-            snprintf(buf, sizeof(buf), "%.2fV (%.0f%%) %s", id(sensor_batt_mv).state / 1000.0f, id(sensor_batt_level).state, mode);
-            lv_label_set_text(id(ui_batt), buf);
     battery_level:
       name: "Battery"
       id: sensor_batt_level
+      on_value:
+        - script.execute: refresh_pocket
 
 binary_sensor:
   - platform: htram_gd32
@@ -344,20 +427,10 @@ binary_sensor:
       name: "USB Power"
       id: sensor_usb
       on_state:
-        - lambda: |-
-            char buf[32];
-            const char *mode = id(sensor_usb).state ? (id(sensor_chrg).state ? "[CHRG]" : "[USB]") : "";
-            snprintf(buf, sizeof(buf), "%.2fV (%.0f%%) %s", id(sensor_batt_mv).state / 1000.0f, id(sensor_batt_level).state, mode);
-            lv_label_set_text(id(ui_batt), buf);
+        - script.execute: refresh_pocket
     charging:
       name: "Charging"
       id: sensor_chrg
-      on_state:
-        - lambda: |-
-            char buf[32];
-            const char *mode = id(sensor_usb).state ? (id(sensor_chrg).state ? "[CHRG]" : "[USB]") : "";
-            snprintf(buf, sizeof(buf), "%.2fV (%.0f%%) %s", id(sensor_batt_mv).state / 1000.0f, id(sensor_batt_level).state, mode);
-            lv_label_set_text(id(ui_batt), buf);
     button:
       name: "Button"
       id: htram_button
@@ -365,6 +438,11 @@ binary_sensor:
 text_sensor:
   - platform: version
     name: "ESPHome Version"
+  - platform: homeassistant
+    id: outdoor_cond
+    entity_id: ${weather_entity}
+    on_value:
+      - lambda: if (id(slot_idx) == 1) id(refresh_slot).execute();
   - platform: htram_gd32
     firmware_version:
       name: "GD32 Firmware"
@@ -418,3 +496,14 @@ switch:
       name: "LED Green"
       icon: "mdi:led-on"
       restore_mode: DISABLED
+
+  - platform: template
+    name: "LED Auto"
+    icon: "mdi:television-ambient-light"
+    lambda: return id(led_auto);
+    turn_on_action:
+      - lambda: id(led_auto) = true;
+      - script.execute: refresh_leds
+    turn_off_action:
+      - lambda: id(led_auto) = false;
+    restore_mode: RESTORE_DEFAULT_ON
