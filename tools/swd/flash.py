@@ -254,6 +254,11 @@ def main() -> int:
             if res_json.get("result") != "ok":
                 print(f"[ota] Flashing failed: {res_json.get('reason', 'unknown')}", file=sys.stderr)
                 return 1
+            staged_crc = res_json.get("staged_crc")
+            if staged_crc is not None and staged_crc != host_crc:
+                print(f"[ota] CRC mismatch: host=0x{host_crc:04X} "
+                      f"esp=0x{staged_crc:04X} (upload corrupted)", file=sys.stderr)
+                return 1
             print(f"[ok] OTA successful! Bytes written: {res_json.get('bytes_written')}")
             return 0
         except json.JSONDecodeError:
