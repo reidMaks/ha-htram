@@ -98,6 +98,10 @@ sensor:
 text_sensor:
   - platform: version
     name: "ESPHome Version"
+  - platform: htram_gd32
+    firmware_version:
+      name: "GD32 Firmware"
+      entity_category: diagnostic
 
 button:
   - platform: template

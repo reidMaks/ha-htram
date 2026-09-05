@@ -3,6 +3,7 @@
 #include "display.h"
 #include "periph.h"
 #include "flasher.h"
+#include "build_info.h"  /* generated per build: BUILD_EPOCH/BUILD_GIT_HASH/BUILD_DIRTY */
 
 /* ── Low-Level UART1 (PA2=TX, PA3=RX) ── */
 
@@ -122,6 +123,9 @@ void protocol_send_hello(void)
     pkt.type = PKT_TYPE_HELLO;
     pkt.proto_ver = PROTOCOL_VERSION;
     pkt.fw_ver = GD32_FW_VERSION;
+    pkt.build_flags = BUILD_DIRTY;
+    pkt.build_epoch = BUILD_EPOCH;
+    pkt.git_hash = BUILD_GIT_HASH;
     pkt.crc16 = crc16_ccitt(&pkt.type, sizeof(pkt) - 4);
 
     uart1_write((const uint8_t *)&pkt, sizeof(pkt));

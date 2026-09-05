@@ -204,6 +204,10 @@ int main(void)
             if (sensor_err) status |= STATUS_FLAG_SENSOR_ERR;
             if (btn) status |= STATUS_FLAG_BUTTON_PRESSED;
 
+            /* Re-announce firmware version each cycle: the ESP32 is powered by
+             * our PF7 rail and boots *after* the one-shot hello at init, so it
+             * would otherwise never learn GD32_FW_VERSION. */
+            protocol_send_hello();
             protocol_send_telemetry(co2_ppm, temp_001c, hum_001pct, batt_mv, status);
         }
 

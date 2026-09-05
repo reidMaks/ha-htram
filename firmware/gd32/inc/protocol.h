@@ -49,7 +49,10 @@ typedef struct {
     uint8_t magic1;         /* 0x55 */
     uint8_t type;           /* 0x02 */
     uint8_t proto_ver;      /* 0x01 */
-    uint16_t fw_ver;        /* 0x0100 */
+    uint16_t fw_ver;        /* 0x0100 (nibble major.minor.patch) */
+    uint8_t build_flags;    /* bit0 = source tree was dirty at build time */
+    uint32_t build_epoch;   /* build time, Unix seconds UTC (LE) */
+    uint32_t git_hash;      /* first 4 bytes of commit SHA, 8 hex (LE) */
     uint16_t crc16;         /* CRC-16-CCITT */
 } pkt_hello_t;
 

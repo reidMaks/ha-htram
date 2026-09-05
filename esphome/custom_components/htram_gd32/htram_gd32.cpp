@@ -2,7 +2,7 @@
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
 #include "esphome/core/application.h"
-#include "driver/uart.h"
+#include <ctime>
 
 namespace esphome {
 namespace htram_gd32 {
@@ -56,7 +56,8 @@ void HtramGd32Component::loop() {
       if (type == 0x01) {
         expected_len = 14;
       } else if (type == 0x02) {
-        expected_len = 7;
+        // pkt_hello_t: magic(2)+type(1)+proto_ver(1)+fw_ver(2)+flags(1)+epoch(4)+git(4)+crc16(2)
+        expected_len = 17;
       } else {
         ESP_LOGW(TAG, "Unknown packet type: 0x%02X", type);
         rx_buffer_.clear();
@@ -90,6 +91,30 @@ void HtramGd32Component::process_packet_(const uint8_t *data, size_t len) {
     if (this->temp_sensor_ != nullptr) this->temp_sensor_->publish_state(temp / 100.0f);
     if (this->hum_sensor_ != nullptr) this->hum_sensor_->publish_state(hum / 100.0f);
     if (this->batt_sensor_ != nullptr) this->batt_sensor_->publish_state(last_batt_mv_);
+  } else if (type == 0x02) {
+    // pkt_hello_t: proto_ver(1) fw_ver(2 LE) build_flags(1) build_epoch(4 LE) git_hash(4 LE).
+    // fw_ver is nibble-encoded major.minor.patch, e.g. 0x0100 -> "1.0.0" (see firmware protocol.h).
+    uint16_t fw = data[4] | (data[5] << 8);
+    uint8_t flags = data[6];
+    uint32_t epoch = (uint32_t) data[7] | ((uint32_t) data[8] << 8) | ((uint32_t) data[9] << 16) |
+                     ((uint32_t) data[10] << 24);
+    uint32_t git = (uint32_t) data[11] | ((uint32_t) data[12] << 8) | ((uint32_t) data[13] << 16) |
+                   ((uint32_t) data[14] << 24);
+
+    char ts[20] = "?";
+    if (epoch != 0) {
+      time_t t = (time_t) epoch;
+      struct tm tm_utc;
+      gmtime_r(&t, &tm_utc);
+      strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M", &tm_utc);
+    }
+    char ver[64];
+    snprintf(ver, sizeof(ver), "%u.%u.%u g%08x%s (%s UTC)", (fw >> 8) & 0xFF, (fw >> 4) & 0x0F,
+             fw & 0x0F, (unsigned) git, (flags & 0x01) ? "+" : "", ts);
+    if (this->fw_version_sensor_ != nullptr && fw_version_ != ver) {
+      fw_version_ = ver;
+      this->fw_version_sensor_->publish_state(ver);
+    }
   }
 }
 
@@ -402,8 +427,6 @@ std::string HtramGd32Component::execute_ota(const std::vector<uint8_t> &firmware
   // 4. Erase Flash
   std::string erase_err;
   if (!rom_erase(erase_err)) {
-    uart_set_parity(UART_NUM_1, UART_PARITY_DISABLE);
-    this->parent_->set_parity(esphome::uart::UART_CONFIG_PARITY_NONE);
     rx_buffer_.clear();
     ota_mode_ = false;
     snprintf(buf, sizeof(buf), "{\"result\":\"error\",\"stage\":\"erase\",\"reason\":\"%s\"}", erase_err.c_str());

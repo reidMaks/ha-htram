@@ -3,7 +3,9 @@
 #include "esphome/core/component.h"
 #include "esphome/components/uart/uart.h"
 #include "esphome/components/sensor/sensor.h"
+#include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/components/web_server_base/web_server_base.h"
+#include <string>
 #include <vector>
 
 namespace esphome {
@@ -19,6 +21,7 @@ class HtramGd32Component : public Component, public uart::UARTDevice {
   void set_temperature_sensor(sensor::Sensor *s) { temp_sensor_ = s; }
   void set_humidity_sensor(sensor::Sensor *s) { hum_sensor_ = s; }
   void set_battery_sensor(sensor::Sensor *s) { batt_sensor_ = s; }
+  void set_fw_version_sensor(text_sensor::TextSensor *s) { fw_version_sensor_ = s; }
 
   void send_beep(uint16_t freq, uint16_t dur);
   void send_backlight(uint8_t brightness);
@@ -33,6 +36,8 @@ class HtramGd32Component : public Component, public uart::UARTDevice {
   sensor::Sensor *temp_sensor_{nullptr};
   sensor::Sensor *hum_sensor_{nullptr};
   sensor::Sensor *batt_sensor_{nullptr};
+  text_sensor::TextSensor *fw_version_sensor_{nullptr};
+  std::string fw_version_;  // last published, to avoid redundant updates
 
   std::vector<uint8_t> rx_buffer_;
   uint16_t last_batt_mv_{0};

@@ -2,8 +2,14 @@ CC      = arm-none-eabi-gcc
 OBJCOPY = arm-none-eabi-objcopy
 SIZE    = arm-none-eabi-size
 
-CFLAGS  = -mcpu=cortex-m3 -mthumb -Os -Wall -Wextra -ffreestanding -nostdlib -nostartfiles -Iinc
+CFLAGS  = -mcpu=cortex-m3 -mthumb -Os -Wall -Wextra -ffreestanding -nostdlib -nostartfiles -Iinc -I$(BUILD_DIR)
 LDFLAGS = -Wl,--gc-sections
+
+# ── Build metadata (regenerated every build, embedded into the HELLO packet) ──
+GIT_HASH  := $(shell git rev-parse HEAD 2>/dev/null | cut -c1-8)
+GIT_HASH  := $(if $(GIT_HASH),$(GIT_HASH),00000000)
+GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo 1 || echo 0)
+BUILD_EPOCH := $(shell date -u +%s)
 
 SRCS    = src/main.c \
           src/display.c \
@@ -24,14 +30,26 @@ TARGET_FLASH_BIN = $(BUILD_DIR)/gd32_firmware.bin
 TARGET_SRAM_ELF  = $(BUILD_DIR)/gd32_firmware_sram.elf
 TARGET_SRAM_BIN  = $(BUILD_DIR)/gd32_firmware_sram.bin
 
+BUILD_INFO_H = $(BUILD_DIR)/build_info.h
+
 PYOCD = ../../.venv/bin/pyocd
 
-.PHONY: all flash sram clean load-sram
+.PHONY: all flash sram clean load-sram FORCE
 
 all: flash sram
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
+
+# ── Generated build stamp: rewritten on every build so BUILD_EPOCH is current ──
+$(BUILD_INFO_H): FORCE | $(BUILD_DIR)
+	@printf '#ifndef BUILD_INFO_H\n#define BUILD_INFO_H\n#define BUILD_EPOCH %suL\n#define BUILD_GIT_HASH 0x%suL\n#define BUILD_DIRTY %s\n#endif\n' \
+	    "$(BUILD_EPOCH)" "$(GIT_HASH)" "$(GIT_DIRTY)" > $@
+
+FORCE:
+
+# Only the HELLO producer needs the stamp; keep the rest incremental.
+$(BUILD_DIR)/flash_protocol_engine.o $(BUILD_DIR)/sram_protocol_engine.o: $(BUILD_INFO_H)
 
 # ── Flash Target ──
 flash: $(BUILD_DIR) $(TARGET_FLASH_BIN)
