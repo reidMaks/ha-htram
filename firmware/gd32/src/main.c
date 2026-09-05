@@ -134,7 +134,7 @@ int main(void)
                 delay_ms(100);
 
                 /* Kill Peripherals */
-                GPIOB_BC = (1 << 8); /* Backlight OFF */
+                display_set_backlight(0); /* Backlight OFF (PWM duty 0; PB8 is AF) */
                 GPIOB_BC = (1 << 11) | (1 << 9); /* Sensor Power OFF */
                 periph_set_leds(0, 0, 0, 0); /* LEDs OFF (this correctly sets data pins LOW) */
                 GPIOA_BC = (1 << 1); /* VLED OFF */

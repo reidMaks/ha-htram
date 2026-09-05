@@ -133,13 +133,44 @@ void display_fill_screen(uint16_t color)
     display_fill_rect(0, 0, 240, 240, color);
 }
 
+/* Backlight PWM: PB8 -> TIMER15_CH0 (AF2). 100 duty steps map directly to the
+ * 0..100 brightness sent over the protocol; ~1 kHz regardless of core clock. */
+#define BL_PWM_STEPS 100u
+
+static void backlight_pwm_init(void)
+{
+    RCU_APB2EN |= RCU_APB2EN_TIMER15EN;
+
+    /* PB8: alternate-function mode, push-pull, high speed, AF2 = TIMER15_CH0 */
+    uint32_t ctl = GPIO_CTL(GPIOB_BASE);
+    ctl &= ~(3u << (8 * 2));
+    ctl |= (2u << (8 * 2));               /* 10 = AF */
+    GPIO_CTL(GPIOB_BASE) = ctl;
+    GPIO_OMD(GPIOB_BASE) &= ~(1u << 8);   /* push-pull */
+    GPIO_OSPD(GPIOB_BASE) |= (3u << (8 * 2));
+    uint32_t af = GPIO_AFSEL1(GPIOB_BASE);
+    af &= ~(0xFu << 0);                   /* pin 8 -> AFSEL1[3:0] */
+    af |= (2u << 0);                      /* AF2 */
+    GPIO_AFSEL1(GPIOB_BASE) = af;
+
+    TIMER15_PSC = (SYSTEM_CLOCK_HZ / (1000u * BL_PWM_STEPS)) - 1u; /* ~1 kHz */
+    TIMER15_CAR = BL_PWM_STEPS - 1u;      /* period = 100 counts */
+    TIMER15_CH0CV = 0;                    /* start dark */
+
+    /* Channel 0: PWM mode 0 (CH0COMCTL=110) + compare preload (CH0COMSEN) */
+    TIMER15_CHCTL0 = (6u << 4) | (1u << 3);
+    /* Enable CH0 output, active-high (CH0P=0) */
+    TIMER15_CHCTL2 = (1u << 0);
+    /* Advanced timer requires primary output enable */
+    TIMER15_CCHP = (1u << 15);            /* POEN */
+    TIMER15_SWEVG = (1u << 0);            /* UPG: latch PSC/CAR/preload */
+    TIMER15_CTL0 = (1u << 7) | (1u << 0); /* ARSE | CEN */
+}
+
 void display_set_backlight(uint8_t brightness)
 {
-    if (brightness > 0) {
-        GPIOB_BOP = (1 << 8); /* Backlight ON */
-    } else {
-        GPIOB_BC = (1 << 8);  /* Backlight OFF */
-    }
+    if (brightness > BL_PWM_STEPS) brightness = BL_PWM_STEPS;
+    TIMER15_CH0CV = brightness;           /* 0 = off, 100 = full */
 }
 
 void display_init(void)
@@ -147,15 +178,15 @@ void display_init(void)
     /* Enable GPIOB clock */
     RCU_AHBEN |= RCU_AHBEN_PBEN;
 
-    /* Configure display GPIO pins (PB8, PB12, PB13, PB14, PB15) */
-    gpio_cfg_out_pp(GPIOB_BASE, 8);   /* Backlight */
+    /* Configure display GPIO pins (PB12, PB13, PB14, PB15); PB8 backlight is
+     * driven by TIMER15_CH0 PWM (set up below) rather than a plain GPIO. */
+    backlight_pwm_init();              /* Backlight (PB8, PWM, starts at 0) */
     gpio_cfg_out_pp(GPIOB_BASE, 12);  /* RES */
     gpio_cfg_out_pp(GPIOB_BASE, 13);  /* SCK */
     gpio_cfg_out_pp(GPIOB_BASE, 14);  /* CS */
     gpio_cfg_out_pp(GPIOB_BASE, 15);  /* SDA */
 
-    /* Default idle pin states */
-    GPIOB_BC = (1 << 8);    /* Backlight OFF initially */
+    /* Default idle pin states (backlight already dark: PWM duty 0) */
     LCD_RES_HIGH();
     LCD_SCK_HIGH();
     LCD_CS_HIGH();

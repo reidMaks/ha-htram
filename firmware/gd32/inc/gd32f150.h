@@ -31,6 +31,7 @@
 #define RCU_APB2EN_USART0EN (1 << 14)
 #define RCU_APB2EN_ADCEN    (1 << 9)
 #define RCU_APB1EN_TIMER2EN (1 << 1)
+#define RCU_APB2EN_TIMER15EN (1 << 17)
 
 /* ── ADC Registers ── */
 #define ADC_BASE        0x40012400
@@ -68,6 +69,19 @@
 #define GPIOA_BC        GPIO_BC(GPIOA_BASE)
 #define GPIOB_BC        GPIO_BC(GPIOB_BASE)
 #define GPIOC_BC        GPIO_BC(GPIOC_BASE)
+
+/* ── TIMER15 (single-channel advanced timer + break; drives PB8 backlight PWM) ── */
+#define TIMER15_BASE    0x40014400
+#define TIMER15_CTL0    (*(volatile uint32_t *)(TIMER15_BASE + 0x00))
+#define TIMER15_CTL1    (*(volatile uint32_t *)(TIMER15_BASE + 0x04))
+#define TIMER15_SWEVG   (*(volatile uint32_t *)(TIMER15_BASE + 0x14))
+#define TIMER15_CHCTL0  (*(volatile uint32_t *)(TIMER15_BASE + 0x18))
+#define TIMER15_CHCTL2  (*(volatile uint32_t *)(TIMER15_BASE + 0x20))
+#define TIMER15_CNT     (*(volatile uint32_t *)(TIMER15_BASE + 0x24))
+#define TIMER15_PSC     (*(volatile uint32_t *)(TIMER15_BASE + 0x28))
+#define TIMER15_CAR     (*(volatile uint32_t *)(TIMER15_BASE + 0x2C))
+#define TIMER15_CH0CV   (*(volatile uint32_t *)(TIMER15_BASE + 0x34))
+#define TIMER15_CCHP    (*(volatile uint32_t *)(TIMER15_BASE + 0x44))
 
 /* ── USART Registers ── */
 #define USART0_BASE     0x40013800
