@@ -28,6 +28,9 @@
 #define STATUS_FLAG_WARMUP          (1 << 2)
 #define STATUS_FLAG_SENSOR_ERR      (1 << 3)
 #define STATUS_FLAG_BUTTON_PRESSED  (1 << 4)
+#define STATUS_FLAG_LED_GREEN       (1 << 5)
+#define STATUS_FLAG_LED_YELLOW      (1 << 6)
+#define STATUS_FLAG_LED_RED         (1 << 7)
 
 /* ── Packets (Packed) ── */
 #pragma pack(push, 1)

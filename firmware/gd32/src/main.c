@@ -204,6 +204,11 @@ int main(void)
             if (sensor_err) status |= STATUS_FLAG_SENSOR_ERR;
             if (btn) status |= STATUS_FLAG_BUTTON_PRESSED;
 
+            uint8_t leds = periph_get_led_state();
+            if (leds & 1) status |= STATUS_FLAG_LED_RED;
+            if (leds & 2) status |= STATUS_FLAG_LED_YELLOW;
+            if (leds & 4) status |= STATUS_FLAG_LED_GREEN;
+
             /* Re-announce firmware version each cycle: the ESP32 is powered by
              * our PF7 rail and boots *after* the one-shot hello at init, so it
              * would otherwise never learn GD32_FW_VERSION. */

@@ -7,6 +7,7 @@ from esphome.const import (
     DEVICE_CLASS_HUMIDITY,
     DEVICE_CLASS_CARBON_DIOXIDE,
     DEVICE_CLASS_VOLTAGE,
+    DEVICE_CLASS_BATTERY,
     STATE_CLASS_MEASUREMENT,
     UNIT_CELSIUS,
     UNIT_PERCENT,
@@ -20,6 +21,7 @@ CONF_CO2 = "co2"
 CONF_TEMPERATURE = "temperature"
 CONF_HUMIDITY = "humidity"
 CONF_BATTERY = "battery"
+CONF_BATTERY_LEVEL = "battery_level"
 
 CONFIG_SCHEMA = cv.Schema({
     cv.GenerateID(CONF_HTRAM_ID): cv.use_id(HtramGd32Component),
@@ -47,6 +49,12 @@ CONFIG_SCHEMA = cv.Schema({
         device_class=DEVICE_CLASS_VOLTAGE,
         state_class=STATE_CLASS_MEASUREMENT,
     ),
+    cv.Optional(CONF_BATTERY_LEVEL): sensor.sensor_schema(
+        unit_of_measurement=UNIT_PERCENT,
+        accuracy_decimals=0,
+        device_class=DEVICE_CLASS_BATTERY,
+        state_class=STATE_CLASS_MEASUREMENT,
+    ),
 })
 
 def to_code(config):
@@ -64,3 +72,6 @@ def to_code(config):
     if CONF_BATTERY in config:
         sens = yield sensor.new_sensor(config[CONF_BATTERY])
         cg.add(hub.set_battery_sensor(sens))
+    if CONF_BATTERY_LEVEL in config:
+        sens = yield sensor.new_sensor(config[CONF_BATTERY_LEVEL])
+        cg.add(hub.set_battery_level_sensor(sens))

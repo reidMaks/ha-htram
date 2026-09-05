@@ -4,6 +4,8 @@
 #include "esphome/components/uart/uart.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/text_sensor/text_sensor.h"
+#include "esphome/components/binary_sensor/binary_sensor.h"
+#include "esphome/components/switch/switch.h"
 #include "esphome/components/web_server_base/web_server_base.h"
 #include <string>
 #include <vector>
@@ -21,12 +23,21 @@ class HtramGd32Component : public Component, public uart::UARTDevice {
   void set_temperature_sensor(sensor::Sensor *s) { temp_sensor_ = s; }
   void set_humidity_sensor(sensor::Sensor *s) { hum_sensor_ = s; }
   void set_battery_sensor(sensor::Sensor *s) { batt_sensor_ = s; }
+  void set_battery_level_sensor(sensor::Sensor *s) { batt_level_sensor_ = s; }
   void set_fw_version_sensor(text_sensor::TextSensor *s) { fw_version_sensor_ = s; }
+  void set_usb_binary_sensor(binary_sensor::BinarySensor *s) { usb_sensor_ = s; }
+  void set_charging_binary_sensor(binary_sensor::BinarySensor *s) { charging_sensor_ = s; }
+  void set_led_switch(uint8_t channel, switch_::Switch *s) {
+    if (channel < 3) led_switch_[channel] = s;
+  }
 
   void send_beep(uint16_t freq, uint16_t dur);
   void send_backlight(uint8_t brightness);
   void send_leds(uint8_t r, uint8_t y, uint8_t g, uint8_t brightness);
   void send_enter_bootloader();
+
+  // Called by HtramLedSwitch on user command: channel 0=red 1=yellow 2=green.
+  void set_led(uint8_t channel, bool state);
 
   // Returns JSON string with result
   std::string execute_ota(const std::vector<uint8_t> &firmware);
@@ -36,7 +47,12 @@ class HtramGd32Component : public Component, public uart::UARTDevice {
   sensor::Sensor *temp_sensor_{nullptr};
   sensor::Sensor *hum_sensor_{nullptr};
   sensor::Sensor *batt_sensor_{nullptr};
+  sensor::Sensor *batt_level_sensor_{nullptr};
   text_sensor::TextSensor *fw_version_sensor_{nullptr};
+  binary_sensor::BinarySensor *usb_sensor_{nullptr};
+  binary_sensor::BinarySensor *charging_sensor_{nullptr};
+  switch_::Switch *led_switch_[3]{nullptr, nullptr, nullptr};  // 0=red 1=yellow 2=green
+  bool led_state_[3]{false, false, false};
   std::string fw_version_;  // last published, to avoid redundant updates
 
   std::vector<uint8_t> rx_buffer_;
@@ -52,6 +68,22 @@ class HtramGd32Component : public Component, public uart::UARTDevice {
   bool rom_erase(std::string &err_msg);
   bool rom_write_memory(uint32_t address, const uint8_t *data, size_t len, std::string &err_msg);
   bool rom_go(uint32_t address);
+};
+
+// One of the three indicator LEDs. State is device-authoritative: user commands
+// go to the GD32 via set_led(), and the real state is re-published from telemetry.
+class HtramLedSwitch : public switch_::Switch, public Component {
+ public:
+  void set_parent(HtramGd32Component *parent) { parent_ = parent; }
+  void set_channel(uint8_t channel) { channel_ = channel; }
+
+ protected:
+  void write_state(bool state) override {
+    this->publish_state(state);
+    if (this->parent_ != nullptr) this->parent_->set_led(this->channel_, state);
+  }
+  HtramGd32Component *parent_{nullptr};
+  uint8_t channel_{0};
 };
 
 class Gd32OtaHandler : public AsyncWebHandler {

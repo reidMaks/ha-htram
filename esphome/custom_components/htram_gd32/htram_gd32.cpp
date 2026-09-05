@@ -24,6 +24,26 @@ static uint16_t crc16_ccitt(const uint8_t *data, size_t len) {
   return crc;
 }
 
+// Single-cell Li-ion voltage (mV) -> state-of-charge %, piecewise-linear.
+static float batt_mv_to_pct(uint16_t mv) {
+  static const struct {
+    uint16_t mv;
+    uint8_t pct;
+  } curve[] = {{3200, 0},  {3400, 8},  {3550, 20}, {3650, 35}, {3720, 50}, {3780, 62},
+               {3850, 72}, {3950, 84}, {4050, 93}, {4150, 98}, {4200, 100}};
+  const size_t n = sizeof(curve) / sizeof(curve[0]);
+  if (mv <= curve[0].mv) return 0.0f;
+  if (mv >= curve[n - 1].mv) return 100.0f;
+  for (size_t i = 1; i < n; i++) {
+    if (mv < curve[i].mv) {
+      float span = curve[i].mv - curve[i - 1].mv;
+      float f = (mv - curve[i - 1].mv) / span;
+      return curve[i - 1].pct + f * (curve[i].pct - curve[i - 1].pct);
+    }
+  }
+  return 100.0f;
+}
+
 void HtramGd32Component::setup() {
   ESP_LOGI(TAG, "Setup HTRAM GD32 component...");
   if (esphome::web_server_base::global_web_server_base != nullptr) {
@@ -91,6 +111,25 @@ void HtramGd32Component::process_packet_(const uint8_t *data, size_t len) {
     if (this->temp_sensor_ != nullptr) this->temp_sensor_->publish_state(temp / 100.0f);
     if (this->hum_sensor_ != nullptr) this->hum_sensor_->publish_state(hum / 100.0f);
     if (this->batt_sensor_ != nullptr) this->batt_sensor_->publish_state(last_batt_mv_);
+    if (this->batt_level_sensor_ != nullptr)
+      this->batt_level_sensor_->publish_state(batt_mv_to_pct(last_batt_mv_));
+
+    bool usb = (last_status_ & 0x02) != 0;       // STATUS_FLAG_USB_PRESENT
+    bool charging = (last_status_ & 0x01) != 0;  // STATUS_FLAG_CHARGING
+    if (this->usb_sensor_ != nullptr) this->usb_sensor_->publish_state(usb);
+    if (this->charging_sensor_ != nullptr) this->charging_sensor_->publish_state(charging);
+
+    // LED state is device-authoritative: mirror the reported bits onto the switches.
+    bool leds[3] = {
+        (last_status_ & 0x80) != 0,  // red    -> STATUS_FLAG_LED_RED
+        (last_status_ & 0x40) != 0,  // yellow -> STATUS_FLAG_LED_YELLOW
+        (last_status_ & 0x20) != 0,  // green  -> STATUS_FLAG_LED_GREEN
+    };
+    for (uint8_t i = 0; i < 3; i++) {
+      led_state_[i] = leds[i];
+      if (this->led_switch_[i] != nullptr && this->led_switch_[i]->state != leds[i])
+        this->led_switch_[i]->publish_state(leds[i]);
+    }
   } else if (type == 0x02) {
     // pkt_hello_t: proto_ver(1) fw_ver(2 LE) build_flags(1) build_epoch(4 LE) git_hash(4 LE).
     // fw_ver is nibble-encoded major.minor.patch, e.g. 0x0100 -> "1.0.0" (see firmware protocol.h).
@@ -141,6 +180,13 @@ void HtramGd32Component::send_leds(uint8_t r, uint8_t y, uint8_t g, uint8_t brig
   uint16_t crc = crc16_ccitt(&pkt[2], 5);
   pkt[7] = crc & 0xFF; pkt[8] = crc >> 8;
   this->write_array(pkt, 9);
+}
+
+void HtramGd32Component::set_led(uint8_t channel, bool state) {
+  if (channel >= 3) return;
+  led_state_[channel] = state;
+  // brightness byte is fixed: hardware LEDs are on/off only.
+  send_leds(led_state_[0], led_state_[1], led_state_[2], 1);
 }
 
 void HtramGd32Component::send_enter_bootloader() {

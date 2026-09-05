@@ -127,10 +127,18 @@ void periph_init(void)
     while ((ADC_CTL1 & (1 << 2)) && --to) ;
 }
 
+/* Last commanded LED state, bit0=red bit1=yellow bit2=green. Mirrored to the
+ * ESP over telemetry so Home Assistant reflects what the GD32 actually shows. */
+static volatile uint8_t g_led_state;
+
 void periph_set_leds(uint8_t red, uint8_t yellow, uint8_t green, uint8_t brightness)
 {
+    (void)brightness; /* hardware has no LED dimming; on/off only */
+
+    g_led_state = (uint8_t)((red ? 1 : 0) | (yellow ? 2 : 0) | (green ? 4 : 0));
+
     /* VLED Anode Switch */
-    if (red || yellow || green || brightness > 0) {
+    if (red || yellow || green) {
         GPIOA_BOP = (1 << 1);
     } else {
         GPIOA_BC = (1 << 1);
@@ -139,6 +147,11 @@ void periph_set_leds(uint8_t red, uint8_t yellow, uint8_t green, uint8_t brightn
     if (green)  GPIOC_BOP = (1 << 14); else GPIOC_BC = (1 << 14);
     if (yellow) GPIOB_BOP = (1 << 4);  else GPIOB_BC = (1 << 4);
     if (red)    GPIOB_BOP = (1 << 5);  else GPIOB_BC = (1 << 5);
+}
+
+uint8_t periph_get_led_state(void)
+{
+    return g_led_state;
 }
 
 void periph_beep(uint16_t freq_hz, uint16_t duration_ms)

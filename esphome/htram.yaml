@@ -94,6 +94,15 @@ sensor:
       name: "Humidity"
     battery:
       name: "Battery Voltage"
+    battery_level:
+      name: "Battery"
+
+binary_sensor:
+  - platform: htram_gd32
+    usb:
+      name: "USB Power"
+    charging:
+      name: "Charging"
 
 text_sensor:
   - platform: version
@@ -132,53 +141,20 @@ number:
       - lambda: |-
           id(htram_core)->send_backlight(x);
 
-  - platform: template
-    name: "LED Brightness"
-    id: led_brightness
-    icon: "mdi:brightness-percent"
-    entity_category: config
-    min_value: 0
-    max_value: 100
-    step: 1
-    initial_value: 50
-    optimistic: true
-    set_action:
-      - lambda: |-
-          id(htram_core)->send_leds(id(led_red).state, id(led_yellow).state, id(led_green).state, x);
-
 switch:
-  - platform: template
-    name: "LED Red"
-    id: led_red
-    icon: "mdi:led-on"
-    optimistic: true
-    turn_on_action:
-      - lambda: |-
-          id(htram_core)->send_leds(1, id(led_yellow).state, id(led_green).state, id(led_brightness).state);
-    turn_off_action:
-      - lambda: |-
-          id(htram_core)->send_leds(0, id(led_yellow).state, id(led_green).state, id(led_brightness).state);
-
-  - platform: template
-    name: "LED Yellow"
-    id: led_yellow
-    icon: "mdi:led-on"
-    optimistic: true
-    turn_on_action:
-      - lambda: |-
-          id(htram_core)->send_leds(id(led_red).state, 1, id(led_green).state, id(led_brightness).state);
-    turn_off_action:
-      - lambda: |-
-          id(htram_core)->send_leds(id(led_red).state, 0, id(led_green).state, id(led_brightness).state);
-
-  - platform: template
-    name: "LED Green"
-    id: led_green
-    icon: "mdi:led-on"
-    optimistic: true
-    turn_on_action:
-      - lambda: |-
-          id(htram_core)->send_leds(id(led_red).state, id(led_yellow).state, 1, id(led_brightness).state);
-    turn_off_action:
-      - lambda: |-
-          id(htram_core)->send_leds(id(led_red).state, id(led_yellow).state, 0, id(led_brightness).state);
+  # LED state is authoritative on the GD32 (it lights green at boot and mirrors
+  # its real state back over telemetry); DISABLED restore keeps the ESP from
+  # overriding it on connect.
+  - platform: htram_gd32
+    red:
+      name: "LED Red"
+      icon: "mdi:led-on"
+      restore_mode: DISABLED
+    yellow:
+      name: "LED Yellow"
+      icon: "mdi:led-on"
+      restore_mode: DISABLED
+    green:
+      name: "LED Green"
+      icon: "mdi:led-on"
+      restore_mode: DISABLED
