@@ -3,6 +3,7 @@
 #include "esphome/core/helpers.h"
 #include "esphome/core/application.h"
 #include <ctime>
+#include <cctype>
 
 namespace esphome {
 namespace htram_gd32 {
@@ -191,7 +192,7 @@ void HtramGd32Component::set_led(uint8_t channel, bool state) {
 
 void HtramGd32Component::send_melody(const uint16_t *freqs, const uint16_t *durs, uint8_t count) {
   if (count == 0) return;
-  if (count > 48) count = 48;  // GD32 clamps to MELODY_MAX
+  if (count > 96) count = 96;  // GD32 clamps to MELODY_MAX
   std::vector<uint8_t> pkt;
   pkt.reserve(4 + (size_t) count * 4 + 2);
   pkt.push_back(0xAA);
@@ -210,14 +211,118 @@ void HtramGd32Component::send_melody(const uint16_t *freqs, const uint16_t *durs
   this->write_array(pkt.data(), pkt.size());
 }
 
+void HtramGd32Component::send_stop() {
+  // CMD_PLAY_MELODY with count 0 => GD32 silences and cancels playback.
+  uint8_t pkt[6] = {0xAA, 0x55, 0x14, 0x00};
+  uint16_t crc = crc16_ccitt(&pkt[2], 2);
+  pkt[4] = crc & 0xFF;
+  pkt[5] = crc >> 8;
+  this->write_array(pkt, 6);
+}
+
+// note letter (a..g) -> index into the octave-4 semitone table (c,c#,d..b)
+static uint16_t rtttl_note_freq(int note_idx, int octave) {
+  static const uint16_t base[12] = {262, 277, 294, 311, 330, 349,
+                                    370, 392, 415, 440, 466, 494};  // c..b, octave 4
+  if (note_idx < 0) return 0;  // pause
+  int32_t f = base[note_idx % 12];
+  int shift = octave - 4;
+  while (shift > 0) { f <<= 1; shift--; }
+  while (shift < 0) { f >>= 1; shift++; }
+  if (f < 20) f = 20;
+  if (f > 20000) f = 20000;
+  return (uint16_t) f;
+}
+
+void HtramGd32Component::play_rtttl(const std::string &song) {
+  // RTTTL: name:d=<dur>,o=<oct>,b=<bpm>:<note>,<note>,...
+  size_t c1 = song.find(':');
+  if (c1 == std::string::npos) return;
+  size_t c2 = song.find(':', c1 + 1);
+  if (c2 == std::string::npos) return;
+
+  int def_dur = 4, def_oct = 6, bpm = 63;
+  {
+    std::string defs = song.substr(c1 + 1, c2 - c1 - 1);
+    size_t i = 0;
+    while (i < defs.size()) {
+      while (i < defs.size() && !isalpha((unsigned char) defs[i])) i++;
+      if (i >= defs.size()) break;
+      char key = (char) tolower((unsigned char) defs[i]);
+      i++;
+      while (i < defs.size() && defs[i] != '=') i++;
+      if (i < defs.size()) i++;  // skip '='
+      int val = 0;
+      bool any = false;
+      while (i < defs.size() && isdigit((unsigned char) defs[i])) {
+        val = val * 10 + (defs[i] - '0');
+        i++;
+        any = true;
+      }
+      if (any) {
+        if (key == 'd') def_dur = val;
+        else if (key == 'o') def_oct = val;
+        else if (key == 'b') bpm = val;
+      }
+    }
+  }
+  if (bpm <= 0) bpm = 63;
+  uint32_t whole_ms = 4u * 60000u / (uint32_t) bpm;  // whole-note duration
+
+  static const int letter_map[7] = {9, 11, 0, 2, 4, 5, 7};  // a,b,c,d,e,f,g
+  std::vector<uint16_t> freqs, durs;
+  size_t i = c2 + 1;
+  size_t n = song.size();
+  while (i < n && freqs.size() < 96) {
+    while (i < n && (song[i] == ',' || song[i] == ' ')) i++;
+    if (i >= n) break;
+
+    int dur = 0;
+    bool has_dur = false;
+    while (i < n && isdigit((unsigned char) song[i])) { dur = dur * 10 + (song[i] - '0'); i++; has_dur = true; }
+    if (!has_dur) dur = def_dur;
+
+    char c = (i < n) ? (char) tolower((unsigned char) song[i]) : 0;
+    int note_idx;
+    if (c == 'p') {
+      note_idx = -1;
+      i++;
+    } else if (c >= 'a' && c <= 'g') {
+      note_idx = letter_map[c - 'a'];
+      i++;
+      if (i < n && song[i] == '#') { note_idx++; i++; }
+    } else {
+      i++;
+      continue;
+    }
+
+    bool dotted = false;
+    if (i < n && song[i] == '.') { dotted = true; i++; }
+    int oct = def_oct;
+    if (i < n && isdigit((unsigned char) song[i])) { oct = song[i] - '0'; i++; }
+    if (i < n && song[i] == '.') { dotted = true; i++; }
+
+    uint32_t ms = (dur > 0) ? whole_ms / (uint32_t) dur : whole_ms / 4;
+    if (dotted) ms += ms / 2;
+    if (ms > 65535) ms = 65535;
+
+    freqs.push_back(rtttl_note_freq(note_idx, oct));
+    durs.push_back((uint16_t) ms);
+  }
+
+  if (freqs.empty()) {
+    ESP_LOGW(TAG, "RTTTL parse produced no notes: %s", song.c_str());
+    return;
+  }
+  ESP_LOGI(TAG, "Playing RTTTL: %d notes (bpm=%d)", (int) freqs.size(), bpm);
+  send_melody(freqs.data(), durs.data(), (uint8_t) freqs.size());
+}
+
 void HtramGd32Component::play_anthem() {
-  // Opening of "Ще не вмерла України" (Verbytsky) — approximate transcription;
-  // freq in Hz, dur in ms, freq 0 = rest. Tweak the tables to refine the tune.
-  static const uint16_t f[] = {587, 0,   587, 523, 494, 440, 494, 523, 0,   440,
-                               0,   440, 494, 523, 587, 523, 494, 0,   440, 392};
-  static const uint16_t d[] = {350, 40,  350, 350, 350, 350, 350, 550, 60,  350,
-                               40,  350, 350, 350, 350, 350, 550, 60,  400, 700};
-  send_melody(f, d, sizeof(f) / sizeof(f[0]));
+  // Ukrainian anthem, RTTTL (same transcription as the JAAM alarm map project).
+  play_rtttl(
+      "UkraineAnthem:d=4,o=5,b=200:2d5,4d5,32p,4d5,32p,4d5,32p,4c5,4d5,4d#5,2f5,"
+      "4f5,4d#5,2d5,2c5,2a#4,2d5,2a4,2d5,1g4,32p,1g4");
 }
 
 void HtramGd32Component::send_enter_bootloader() {

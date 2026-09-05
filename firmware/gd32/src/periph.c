@@ -159,7 +159,7 @@ uint8_t periph_get_led_state(void)
 /* ── Buzzer: PB0 = TIMER2_CH2 (AF1). Tone via PWM, non-blocking melody player.
  * Timer ticks at 1 MHz so a note of f Hz uses CAR = 1e6/f, 50% duty. ── */
 #define BUZZER_TICK_HZ 1000000u
-#define MELODY_MAX     48u
+#define MELODY_MAX     96u
 
 static uint16_t mel_freq[MELODY_MAX];
 static uint16_t mel_dur[MELODY_MAX];

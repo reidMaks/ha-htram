@@ -163,7 +163,7 @@ static uint8_t pixel_phase = 0;
 static uint8_t rx_crc0 = 0;
 
 /* CMD_PLAY_MELODY: streamed count*(freq16_LE, dur16_LE) */
-#define MELODY_MAX_NOTES 48
+#define MELODY_MAX_NOTES 96
 static uint8_t melody_buf[MELODY_MAX_NOTES * 4];
 static uint8_t melody_count = 0;   /* stored (clamped) note count */
 static uint16_t melody_idx = 0;    /* byte index while streaming */
