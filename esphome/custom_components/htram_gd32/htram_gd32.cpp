@@ -80,8 +80,8 @@ void HtramGd32Component::loop() {
         // pkt_hello_t: magic(2)+type(1)+proto_ver(1)+fw_ver(2)+flags(1)+epoch(4)+git(4)+crc16(2)
         expected_len = 17;
       } else if (type == 0x03) {
-        // pkt_button_event_t: magic(2)+type(1)+state(1)+duration_ms(2)+crc16(2)
-        expected_len = 7;
+        // pkt_button_event_t: magic(2)+type(1)+state(1)+duration_ms(2)+crc16(2) = 8 bytes
+        expected_len = 8;
       } else {
         ESP_LOGW(TAG, "Unknown packet type: 0x%02X", type);
         rx_buffer_.clear();
@@ -169,15 +169,45 @@ void HtramGd32Component::process_packet_(const uint8_t *data, size_t len) {
 
     if (state == 0) {
       ESP_LOGI(TAG, "Button released (held %u ms)", duration_ms);
-      if (this->button_action_sensor_ != nullptr) {
-        if (duration_ms >= 30 && duration_ms < 600) {
-          this->button_action_sensor_->publish_state("single");
-        } else if (duration_ms >= 600 && duration_ms < 2800) {
+      if (duration_ms >= 600 && duration_ms < 2800) {
+        this->cancel_timeout("button_click");
+        this->click_count_ = 0;
+        if (this->button_action_sensor_ != nullptr) {
           this->button_action_sensor_->publish_state("long");
+          this->set_timeout("button_clear", 1000, [this]() {
+            if (this->button_action_sensor_ != nullptr) {
+              this->button_action_sensor_->publish_state("");
+            }
+          });
         }
+      } else if (duration_ms >= 30 && duration_ms < 600) {
+        this->click_count_++;
+        this->cancel_timeout("button_click");
+        this->set_timeout("button_click", 350, [this]() {
+          if (this->button_action_sensor_ != nullptr && this->click_count_ > 0) {
+            if (this->click_count_ == 1) {
+              this->button_action_sensor_->publish_state("single");
+            } else if (this->click_count_ == 2) {
+              this->button_action_sensor_->publish_state("double");
+            } else if (this->click_count_ == 3) {
+              this->button_action_sensor_->publish_state("triple");
+            } else if (this->click_count_ == 4) {
+              this->button_action_sensor_->publish_state("quadruple");
+            } else {
+              this->button_action_sensor_->publish_state("many");
+            }
+            this->set_timeout("button_clear", 1000, [this]() {
+              if (this->button_action_sensor_ != nullptr) {
+                this->button_action_sensor_->publish_state("");
+              }
+            });
+          }
+          this->click_count_ = 0;
+        });
       }
     } else {
       ESP_LOGD(TAG, "Button pressed");
+      this->cancel_timeout("button_clear");
     }
   }
 }

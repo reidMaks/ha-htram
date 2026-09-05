@@ -60,6 +60,7 @@ class HtramGd32Component : public Component, public uart::UARTDevice {
   binary_sensor::BinarySensor *usb_sensor_{nullptr};
   binary_sensor::BinarySensor *charging_sensor_{nullptr};
   binary_sensor::BinarySensor *button_sensor_{nullptr};
+  uint8_t click_count_{0};
   switch_::Switch *led_switch_[3]{nullptr, nullptr, nullptr};  // 0=red 1=yellow 2=green
   bool led_state_[3]{false, false, false};
   std::string fw_version_;  // last published, to avoid redundant updates
