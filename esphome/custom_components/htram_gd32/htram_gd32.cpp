@@ -10,17 +10,22 @@ namespace htram_gd32 {
 
 static const char *const TAG = "htram_gd32";
 
+static inline uint16_t crc16_ccitt_update(uint16_t crc, uint8_t byte) {
+  crc ^= (uint16_t)byte << 8;
+  for (int j = 0; j < 8; j++) {
+    if (crc & 0x8000) {
+      crc = (crc << 1) ^ 0x1021;
+    } else {
+      crc = crc << 1;
+    }
+  }
+  return crc;
+}
+
 static uint16_t crc16_ccitt(const uint8_t *data, size_t len) {
   uint16_t crc = 0x0000;
   for (size_t i = 0; i < len; i++) {
-    crc ^= (uint16_t)data[i] << 8;
-    for (int j = 0; j < 8; j++) {
-      if (crc & 0x8000) {
-        crc = (crc << 1) ^ 0x1021;
-      } else {
-        crc = crc << 1;
-      }
-    }
+    crc = crc16_ccitt_update(crc, data[i]);
   }
   return crc;
 }
@@ -710,6 +715,95 @@ std::string HtramGd32Component::execute_ota(const std::vector<uint8_t> &firmware
              bytes_written, staged_crc);
   }
   return buf;
+}
+
+void HtramGd32Component::send_draw_rect(uint8_t x, uint8_t y, uint8_t w, uint8_t h, const uint8_t *pixel_data, size_t len) {
+  if (ota_mode_) return;
+  uint8_t hdr[9];
+  hdr[0] = 0xAA;
+  hdr[1] = 0x55;
+  hdr[2] = 0x10;  // CMD_TYPE_DRAW_RECT
+  hdr[3] = x;
+  hdr[4] = y;
+  hdr[5] = w;
+  hdr[6] = h;
+  hdr[7] = (uint8_t)(len & 0xFF);
+  hdr[8] = (uint8_t)(len >> 8);
+
+  uint16_t crc = 0x0000;
+  for (size_t i = 2; i < 9; i++) {
+    crc = crc16_ccitt_update(crc, hdr[i]);
+  }
+  for (size_t i = 0; i < len; i++) {
+    crc = crc16_ccitt_update(crc, pixel_data[i]);
+  }
+
+  this->write_array(hdr, sizeof(hdr));
+  this->write_array(pixel_data, len);
+  uint8_t crc_bytes[2] = {(uint8_t)(crc & 0xFF), (uint8_t)(crc >> 8)};
+  this->write_array(crc_bytes, 2);
+}
+
+void HtramGd32Display::dump_config() {
+  LOG_DISPLAY("", "HTRAM GD32 Display", this);
+}
+
+void HtramGd32Display::update() {
+  this->do_update_();
+}
+
+void HtramGd32Display::draw_pixel_at(int x, int y, Color color) {
+  if (this->parent_ == nullptr) return;
+  if (x < 0 || x >= 240 || y < 0 || y >= 240) return;
+  uint16_t c = display::ColorUtil::color_to_565(color);
+  uint8_t data[2] = {(uint8_t)(c >> 8), (uint8_t)(c & 0xFF)};
+  this->parent_->send_draw_rect(x, y, 1, 1, data, 2);
+}
+
+void HtramGd32Display::draw_pixels_at(int x_start, int y_start, int w, int h, const uint8_t *ptr,
+                                      display::ColorOrder order, display::ColorBitness bitness,
+                                      bool big_endian, int x_offset, int y_offset, int x_pad) {
+  if (this->parent_ == nullptr || ptr == nullptr) return;
+  if (w <= 0 || h <= 0) return;
+  if (x_start >= 240 || y_start >= 240) return;
+
+  int stride = x_offset + w + x_pad;
+  const int max_bytes_per_chunk = 2048;
+  const int bytes_per_pixel = 2;  // RGB565
+
+  int max_rows_per_chunk = max_bytes_per_chunk / (w * bytes_per_pixel);
+  if (max_rows_per_chunk < 1) max_rows_per_chunk = 1;
+  if (max_rows_per_chunk > h) max_rows_per_chunk = h;
+
+  size_t required_chunk_buf = (size_t)w * max_rows_per_chunk * bytes_per_pixel;
+  if (this->chunk_buffer_.size() < required_chunk_buf) {
+    this->chunk_buffer_.resize(required_chunk_buf);
+  }
+
+  for (int y_row = 0; y_row < h; y_row += max_rows_per_chunk) {
+    int cur_h = std::min(max_rows_per_chunk, h - y_row);
+    int cur_y = y_start + y_row;
+    size_t chunk_len = (size_t)w * cur_h * bytes_per_pixel;
+    uint8_t *dst = this->chunk_buffer_.data();
+
+    for (int r = 0; r < cur_h; r++) {
+      const uint8_t *src_row = ptr + (((y_offset + y_row + r) * stride + x_offset) * bytes_per_pixel);
+      if (big_endian) {
+        memcpy(dst, src_row, w * bytes_per_pixel);
+        dst += w * bytes_per_pixel;
+      } else {
+        for (int c = 0; c < w; c++) {
+          dst[0] = src_row[c * 2 + 1];
+          dst[1] = src_row[c * 2 + 0];
+          dst += 2;
+        }
+      }
+    }
+
+    this->parent_->send_draw_rect(x_start, cur_y, w, cur_h, this->chunk_buffer_.data(), chunk_len);
+    App.feed_wdt();
+    delay(1);
+  }
 }
 
 }  // namespace htram_gd32

@@ -91,6 +91,22 @@ void display_send_pixel(uint16_t color)
     LCD_CS_HIGH();
 }
 
+void display_start_pixels(uint8_t x, uint8_t y, uint8_t w, uint8_t h)
+{
+    display_set_window(x, y, w, h);
+    LCD_CS_LOW();
+}
+
+void display_send_pixel_stream(uint16_t color)
+{
+    lcd_send_pixel_raw(color);
+}
+
+void display_end_pixels(void)
+{
+    LCD_CS_HIGH();
+}
+
 void display_set_window(uint8_t x, uint8_t y, uint8_t w, uint8_t h)
 {
     uint16_t x0 = x;

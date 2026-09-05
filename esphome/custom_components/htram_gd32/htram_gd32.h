@@ -7,6 +7,8 @@
 #include "esphome/components/binary_sensor/binary_sensor.h"
 #include "esphome/components/switch/switch.h"
 #include "esphome/components/web_server_base/web_server_base.h"
+#include "esphome/components/display/display.h"
+#include "esphome/components/display/display_color_utils.h"
 #include <string>
 #include <vector>
 
@@ -39,6 +41,7 @@ class HtramGd32Component : public Component, public uart::UARTDevice {
   void send_melody(const uint16_t *freqs, const uint16_t *durs, uint8_t count);
   void send_stop();                          // silence / cancel current melody
   void play_rtttl(const std::string &song);  // parse RTTTL, stream to GD32
+  void send_draw_rect(uint8_t x, uint8_t y, uint8_t w, uint8_t h, const uint8_t *pixel_data, size_t len);
 
   // Called by HtramLedSwitch on user command: channel 0=red 1=yellow 2=green.
   void set_led(uint8_t channel, bool state);
@@ -94,6 +97,27 @@ class HtramLedSwitch : public switch_::Switch, public Component {
   }
   HtramGd32Component *parent_{nullptr};
   uint8_t channel_{0};
+};
+
+class HtramGd32Display : public display::Display {
+ public:
+  void set_parent(HtramGd32Component *parent) { parent_ = parent; }
+
+  void dump_config() override;
+  void update() override;
+
+  void draw_pixel_at(int x, int y, Color color) override;
+  void draw_pixels_at(int x_start, int y_start, int w, int h, const uint8_t *ptr, display::ColorOrder order,
+                      display::ColorBitness bitness, bool big_endian, int x_offset, int y_offset, int x_pad) override;
+
+  display::DisplayType get_display_type() override { return display::DisplayType::DISPLAY_TYPE_COLOR; }
+
+ protected:
+  int get_width_internal() override { return 240; }
+  int get_height_internal() override { return 240; }
+
+  HtramGd32Component *parent_{nullptr};
+  std::vector<uint8_t> chunk_buffer_;
 };
 
 class Gd32OtaHandler : public AsyncWebHandler {

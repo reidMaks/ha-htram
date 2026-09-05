@@ -29,11 +29,18 @@ static void uart1_write(const uint8_t *data, size_t len)
  * commands received. The ISR moves each byte out the instant it arrives; the
  * main loop then consumes the ring at its own pace. Size is a power of two so
  * the index wrap is a mask. */
-#define RX_RING_SIZE 256
+#define RX_RING_SIZE 2048
 static volatile uint8_t rx_ring[RX_RING_SIZE];
 static volatile uint16_t rx_head; /* written by ISR only */
 static volatile uint16_t rx_tail; /* written by main only */
 static volatile uint16_t rx_overflows;
+
+static uint8_t g_external_display_active = 0;
+
+uint8_t protocol_is_external_display_active(void)
+{
+    return g_external_display_active;
+}
 
 void USART1_IRQHandler(void)
 {
@@ -83,8 +90,6 @@ void protocol_init(uint32_t baud)
     GPIO_PUD(GPIOA_BASE) = pud_a;
 
     USART1_CTL0 = 0;
-    /* USART1 Baud Rate Divisor: System Clock / Baud */
-    uint32_t div = SYSTEM_CLOCK_HZ / baud;
     /* Enable RX-not-empty interrupt and unmask USART1 (IRQ28) in the NVIC so
      * incoming bytes are captured by USART1_IRQHandler regardless of what the
      * main loop is doing. */
@@ -170,7 +175,7 @@ static uint8_t rect_x = 0;
 static uint8_t rect_y = 0;
 static uint8_t rect_w = 0;
 static uint8_t rect_h = 0;
-static uint16_t pixels_left = 0;
+static uint16_t bytes_left = 0;
 static uint8_t pixel_hi = 0;
 static uint8_t pixel_phase = 0;
 static uint8_t rx_crc0 = 0;
@@ -182,10 +187,28 @@ static uint8_t melody_count = 0;   /* stored (clamped) note count */
 static uint16_t melody_idx = 0;    /* byte index while streaming */
 static uint16_t melody_bytes_left = 0;
 
+static inline void reset_rx_state(void)
+{
+    if (rx_state == STATE_PIXELS) {
+        display_end_pixels();
+    }
+    rx_state = STATE_MAGIC0;
+}
+
 void protocol_process_rx(void)
 {
+    uint32_t now = periph_millis();
+    static uint32_t last_rx_byte_ms = 0;
+
+    if (uart1_rx_ready()) {
+        last_rx_byte_ms = now;
+    } else if (rx_state != STATE_MAGIC0 && (now - last_rx_byte_ms > 500)) {
+        reset_rx_state();
+    }
+
     while (uart1_rx_ready()) {
         uint8_t b = uart1_getc();
+        last_rx_byte_ms = now;
 
         switch (rx_state) {
         case STATE_MAGIC0:
@@ -201,7 +224,7 @@ void protocol_process_rx(void)
                 /* stay in MAGIC1 if consecutive 0xAA */
                 rx_state = STATE_MAGIC1;
             } else {
-                rx_state = STATE_MAGIC0;
+                reset_rx_state();
             }
             break;
 
@@ -230,7 +253,7 @@ void protocol_process_rx(void)
                 rx_state = STATE_HEADER;
             } else {
                 /* Unknown command */
-                rx_state = STATE_MAGIC0;
+                reset_rx_state();
             }
             break;
 
@@ -244,12 +267,16 @@ void protocol_process_rx(void)
                     rect_y = cmd_buf[1];
                     rect_w = cmd_buf[2];
                     rect_h = cmd_buf[3];
-                    pixels_left = (uint16_t)cmd_buf[4] | ((uint16_t)cmd_buf[5] << 8);
+                    bytes_left = (uint16_t)cmd_buf[4] | ((uint16_t)cmd_buf[5] << 8);
 
-                    /* Set ST7789 window for incoming stream */
-                    display_set_window(rect_x, rect_y, rect_w, rect_h);
-                    pixel_phase = 0;
-                    rx_state = STATE_PIXELS;
+                    if (rect_w > 0 && rect_h > 0 && bytes_left > 0) {
+                        g_external_display_active = 1;
+                        display_start_pixels(rect_x, rect_y, rect_w, rect_h);
+                        pixel_phase = 0;
+                        rx_state = STATE_PIXELS;
+                    } else {
+                        rx_state = STATE_CRC0;
+                    }
                 } else if (current_cmd == CMD_TYPE_PLAY_MELODY) {
                     melody_count = cmd_buf[0];
                     if (melody_count > MELODY_MAX_NOTES) melody_count = MELODY_MAX_NOTES;
@@ -280,14 +307,15 @@ void protocol_process_rx(void)
                 pixel_phase = 1;
             } else {
                 uint16_t pixel = ((uint16_t)pixel_hi << 8) | b;
-                display_send_pixel(pixel);
+                display_send_pixel_stream(pixel);
                 pixel_phase = 0;
             }
 
-            if (pixels_left > 0) {
-                pixels_left--;
+            if (bytes_left > 0) {
+                bytes_left--;
             }
-            if (pixels_left == 0) {
+            if (bytes_left == 0) {
+                display_end_pixels();
                 rx_state = STATE_CRC0;
             }
             break;
@@ -349,12 +377,12 @@ void protocol_process_rx(void)
                     }
                 }
             }
-            rx_state = STATE_MAGIC0;
+            reset_rx_state();
             break;
         }
 
         default:
-            rx_state = STATE_MAGIC0;
+            reset_rx_state();
             break;
         }
     }

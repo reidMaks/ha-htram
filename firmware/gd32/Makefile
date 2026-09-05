@@ -36,7 +36,7 @@ PYOCD = ../../.venv/bin/pyocd
 
 .PHONY: all flash sram clean load-sram FORCE
 
-all: flash sram
+all: flash
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)

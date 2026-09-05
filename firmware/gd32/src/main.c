@@ -230,8 +230,8 @@ int main(void)
             protocol_send_telemetry(co2_ppm, temp_001c, hum_001pct, batt_mv, status);
         }
 
-        /* Update Local Screen (every 1000ms) */
-        if (now - last_ui_ms >= 1000) {
+        /* Update Local Screen (every 1000ms) - only if ESP32 hasn't taken over */
+        if (!protocol_is_external_display_active() && (now - last_ui_ms >= 1000)) {
             last_ui_ms = now;
 
             char buf[32];
