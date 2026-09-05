@@ -1,0 +1,51 @@
+{
+  "noto": {
+    "family": "Noto Sans",
+    "asc": 1.069,
+    "line": 1.362,
+    "cap": 0.714,
+    "kb": 501
+  },
+  "notodisplay": {
+    "family": "Noto Sans Display",
+    "asc": 1.069,
+    "line": 1.362,
+    "cap": 0.714,
+    "kb": 496
+  },
+  "notomono": {
+    "family": "Noto Sans Mono",
+    "asc": 1.069,
+    "line": 1.362,
+    "cap": 0.714,
+    "kb": 499
+  },
+  "notoserif": {
+    "family": "Noto Serif Display",
+    "asc": 1.069,
+    "line": 1.362,
+    "cap": 0.714,
+    "kb": 546
+  },
+  "dejavulight": {
+    "family": "DejaVu Sans ExtraLight",
+    "asc": 0.9282,
+    "line": 1.1641,
+    "cap": 0.7002,
+    "kb": 347
+  },
+  "dejavucond": {
+    "family": "DejaVu Sans Condensed",
+    "asc": 0.9282,
+    "line": 1.1641,
+    "cap": 0.7002,
+    "kb": 667
+  },
+  "dejavuobl": {
+    "family": "DejaVu Sans ExtraLight Oblique",
+    "asc": 0.7422,
+    "line": 0.7568,
+    "cap": 0.7002,
+    "kb": 351
+  }
+}

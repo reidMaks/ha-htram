@@ -1,0 +1,1442 @@
+{
+  "meta": {
+    "display_px": 240,
+    "display_mm": 27,
+    "glass_mm": 65,
+    "body_mm": 80,
+    "note": "240 px / 27 mm = 8.89 px/mm. The eye's frame is the 65 mm black glass, not the 27 mm panel — keep content inside a 206 px circle so the square never announces itself."
+  },
+  "palette": {
+    "co2": [
+      {
+        "max": 800,
+        "color": "#00E676",
+        "en": "EXCELLENT",
+        "ua": "ЧУДОВО"
+      },
+      {
+        "max": 1000,
+        "color": "#AEEA00",
+        "en": "GOOD",
+        "ua": "ДОБРЕ"
+      },
+      {
+        "max": 1500,
+        "color": "#FFC400",
+        "en": "MEDIUM",
+        "ua": "СЕРЕДНЬО"
+      },
+      {
+        "max": 99999,
+        "color": "#FF3D3D",
+        "en": "VENTILATE",
+        "ua": "ПРОВІТРИ"
+      }
+    ],
+    "dim": "#6E6E6E",
+    "dim2": "#3A3A3A",
+    "fg": "#F2F2F2",
+    "cyan": "#00D5FF",
+    "time": "#F0EAE0",
+    "slot": "#707880",
+    "ring": "#131313",
+    "ringfg": "#B9AFA3",
+    "warn": "#FF9E3D"
+  },
+  "variants": [
+    {
+      "id": "f-stack",
+      "name": "F · Стос (база, кільце в кольорі CO2)",
+      "note": "Максимум часу: 88 px, цифра 63 px = 7.1 мм, видно з іншого кінця кімнати. Графіка немає — колір несе саме кільце секунд, тож одна деталь працює і за пульс, і за настрій. Найлаконічніше.",
+      "widgets": [
+        {
+          "type": "arc",
+          "align": "center",
+          "d": 214,
+          "width": 3,
+          "start": 270,
+          "end": 270,
+          "color": "$co2",
+          "track": "$ring",
+          "value": "$secpct",
+          "rounded": false,
+          "cost": {
+            "w": 18,
+            "h": 18,
+            "note": "один сектор 6°/с, не весь bbox"
+          }
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "y": 13,
+          "font": 88,
+          "color": "$time",
+          "text": "{hh}"
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "y": 84,
+          "font": 88,
+          "color": "$time",
+          "text": "{mm}"
+        },
+        {
+          "type": "label",
+          "align": "bottom_mid",
+          "y": -32,
+          "font": 15,
+          "color": "$slot",
+          "cycle": [
+            "{date}",
+            "{out}° надворі",
+            "{temp}°  {hum}%"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "h-noto",
+      "name": "H · Стос ⌥ Noto Sans",
+      "note": "Стос зі зміщенням ±16 px: години ліворуч, хвилини праворуч. Кільце секунд нейтральне (#B9AFA3 @30%, 2 px) — час лишається часом, а колір повітря живе на світлодіодах. Noto Sans — те, чим малює прошивка зараз. Нейтральний, без характеру.",
+      "widgets": [
+        {
+          "type": "arc",
+          "align": "center",
+          "d": 214,
+          "width": 2,
+          "start": 270,
+          "end": 270,
+          "color": "$ringfg",
+          "opa": 0.3,
+          "track": "$ring",
+          "value": "$secpct",
+          "rounded": false,
+          "cost": {
+            "w": 18,
+            "h": 18,
+            "note": "один сектор 6°/с"
+          }
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": -16,
+          "y": 44,
+          "ink": true,
+          "font": 88,
+          "family": "noto",
+          "color": "$time",
+          "text": "{hh}"
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": 16,
+          "y": 115,
+          "ink": true,
+          "font": 88,
+          "family": "noto",
+          "color": "$time",
+          "text": "{mm}"
+        },
+        {
+          "type": "label",
+          "align": "bottom_mid",
+          "y": -32,
+          "font": 15,
+          "family": "noto",
+          "color": "$slot",
+          "cycle": [
+            "{date}",
+            "{out}° надворі",
+            "{temp}°  {hum}%"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "i-display",
+      "name": "I · Стос ⌥ Noto Sans Display",
+      "note": "Стос зі зміщенням ±16 px: години ліворуч, хвилини праворуч. Кільце секунд нейтральне (#B9AFA3 @30%, 2 px) — час лишається часом, а колір повітря живе на світлодіодах. Noto Sans Display — та сама скелетна форма, але намальована під великі кеглі: щільніші апертури, менше повітря в цифрах.",
+      "widgets": [
+        {
+          "type": "arc",
+          "align": "center",
+          "d": 214,
+          "width": 2,
+          "start": 270,
+          "end": 270,
+          "color": "$ringfg",
+          "opa": 0.3,
+          "track": "$ring",
+          "value": "$secpct",
+          "rounded": false,
+          "cost": {
+            "w": 18,
+            "h": 18,
+            "note": "один сектор 6°/с"
+          }
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": -16,
+          "y": 44,
+          "ink": true,
+          "font": 88,
+          "family": "notodisplay",
+          "color": "$time",
+          "text": "{hh}"
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": 16,
+          "y": 115,
+          "ink": true,
+          "font": 88,
+          "family": "notodisplay",
+          "color": "$time",
+          "text": "{mm}"
+        },
+        {
+          "type": "label",
+          "align": "bottom_mid",
+          "y": -32,
+          "font": 15,
+          "family": "notodisplay",
+          "color": "$slot",
+          "cycle": [
+            "{date}",
+            "{out}° надворі",
+            "{temp}°  {hum}%"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "j-mono",
+      "name": "J · Стос ⌥ Noto Sans Mono",
+      "note": "Стос зі зміщенням ±16 px: години ліворуч, хвилини праворуч. Кільце секунд нейтральне (#B9AFA3 @30%, 2 px) — час лишається часом, а колір повітря живе на світлодіодах. Моноширинний. Головне не стиль, а те, що ширина ряду не змінюється від 11 до 88 — цифри не сіпаються, і брудний прямокутник щохвилини однаковий. Штрих 9 px, найважчий із набору. Слот навмисно лишено в Noto Sans: моноширинна кирилиця в даті розповзається.",
+      "widgets": [
+        {
+          "type": "arc",
+          "align": "center",
+          "d": 214,
+          "width": 2,
+          "start": 270,
+          "end": 270,
+          "color": "$ringfg",
+          "opa": 0.3,
+          "track": "$ring",
+          "value": "$secpct",
+          "rounded": false,
+          "cost": {
+            "w": 18,
+            "h": 18,
+            "note": "один сектор 6°/с"
+          }
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": -16,
+          "y": 44,
+          "ink": true,
+          "font": 88,
+          "family": "notomono",
+          "color": "$time",
+          "text": "{hh}"
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": 16,
+          "y": 115,
+          "ink": true,
+          "font": 88,
+          "family": "notomono",
+          "color": "$time",
+          "text": "{mm}"
+        },
+        {
+          "type": "label",
+          "align": "bottom_mid",
+          "y": -32,
+          "font": 15,
+          "family": "noto",
+          "color": "$slot",
+          "cycle": [
+            "{date}",
+            "{out}° надворі",
+            "{temp}°  {hum}%"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "k-serif",
+      "name": "K · Стос ⌥ Noto Serif Display",
+      "note": "Стос зі зміщенням ±16 px: години ліворуч, хвилини праворуч. Кільце секунд нейтральне (#B9AFA3 @30%, 2 px) — час лишається часом, а колір повітря живе на світлодіодах. Серіфний. Найбільш «предметний» вибір, але виміряно: 10-й перцентиль штриха — **2 px (0.22 мм)**, найтонші волосяні лінії 1 px. На 4bpp вони поплямляться і зникнуть при зниженій підсвітці. Відхилено за даними, не за смаком.",
+      "widgets": [
+        {
+          "type": "arc",
+          "align": "center",
+          "d": 214,
+          "width": 2,
+          "start": 270,
+          "end": 270,
+          "color": "$ringfg",
+          "opa": 0.3,
+          "track": "$ring",
+          "value": "$secpct",
+          "rounded": false,
+          "cost": {
+            "w": 18,
+            "h": 18,
+            "note": "один сектор 6°/с"
+          }
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": -16,
+          "y": 44,
+          "ink": true,
+          "font": 88,
+          "family": "notoserif",
+          "color": "$time",
+          "text": "{hh}"
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": 16,
+          "y": 115,
+          "ink": true,
+          "font": 88,
+          "family": "notoserif",
+          "color": "$time",
+          "text": "{mm}"
+        },
+        {
+          "type": "label",
+          "align": "bottom_mid",
+          "y": -32,
+          "font": 15,
+          "family": "notoserif",
+          "color": "$slot",
+          "cycle": [
+            "{date}",
+            "{out}° надворі",
+            "{temp}°  {hum}%"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "l-light",
+      "name": "L · Стос ⌥ DejaVu ExtraLight",
+      "note": "Стос зі зміщенням ±16 px: години ліворуч, хвилини праворуч. Кільце секунд нейтральне (#B9AFA3 @30%, 2 px) — час лишається часом, а колір повітря живе на світлодіодах. Надтонкий, і саме тому рівний: штрих монолінійний **5 px (0.56 мм)** без волосяних переходів — тонше за Noto (8 px), але однорідно. На чорному склі виглядає найдорожче.",
+      "widgets": [
+        {
+          "type": "arc",
+          "align": "center",
+          "d": 214,
+          "width": 2,
+          "start": 270,
+          "end": 270,
+          "color": "$ringfg",
+          "opa": 0.3,
+          "track": "$ring",
+          "value": "$secpct",
+          "rounded": false,
+          "cost": {
+            "w": 18,
+            "h": 18,
+            "note": "один сектор 6°/с"
+          }
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": -16,
+          "y": 44,
+          "ink": true,
+          "font": 88,
+          "family": "dejavulight",
+          "color": "$time",
+          "text": "{hh}"
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": 16,
+          "y": 115,
+          "ink": true,
+          "font": 88,
+          "family": "dejavulight",
+          "color": "$time",
+          "text": "{mm}"
+        },
+        {
+          "type": "label",
+          "align": "bottom_mid",
+          "y": -32,
+          "font": 15,
+          "family": "dejavulight",
+          "color": "$slot",
+          "cycle": [
+            "{date}",
+            "{out}° надворі",
+            "{temp}°  {hum}%"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "n-status",
+      "name": "N · L + статус",
+      "note": "L плюс кишеня стану у правому верхньому кутку — там, де зміщення годин лишило порожнечу. Порожня, коли все гаразд: значок з'являється лише коли зник зв'язок з HA (бурштиновий) або пристрій перейшов на батарею (сірий, під 20 % — бурштиновий). Постійна іконка для стану, який 95 % часу нормальний, — це шум, а не індикація.",
+      "widgets": [
+        {
+          "type": "arc",
+          "align": "center",
+          "d": 214,
+          "width": 2,
+          "start": 270,
+          "end": 270,
+          "color": "$ringfg",
+          "opa": 0.3,
+          "track": "$ring",
+          "value": "$secpct",
+          "rounded": false,
+          "cost": {
+            "w": 18,
+            "h": 18,
+            "note": "один сектор 6°/с"
+          }
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": -16,
+          "y": 44,
+          "ink": true,
+          "font": 88,
+          "family": "dejavulight",
+          "color": "$time",
+          "text": "{hh}"
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": 16,
+          "y": 115,
+          "ink": true,
+          "font": 88,
+          "family": "dejavulight",
+          "color": "$time",
+          "text": "{mm}"
+        },
+        {
+          "type": "label",
+          "align": "bottom_mid",
+          "y": -32,
+          "font": 15,
+          "family": "dejavulight",
+          "color": "$slot",
+          "cycle": [
+            "{date}",
+            "{out}° надворі",
+            "{temp}°  {hum}%"
+          ]
+        },
+        {
+          "type": "icon",
+          "name": "wifi_off",
+          "align": "top_right",
+          "x": -58,
+          "y": 54,
+          "size": 16,
+          "color": "$warn",
+          "when": "!link"
+        },
+        {
+          "type": "icon",
+          "name": "batt",
+          "align": "top_right",
+          "x": -58,
+          "y": 54,
+          "size": 16,
+          "color": "$battcolor",
+          "when": "link&&!usb"
+        }
+      ]
+    },
+    {
+      "id": "o-weather",
+      "name": "O · L + статус + погода",
+      "note": "Погода піктограмою: коли є дощ/сніг/вітер, слот «надворі» стискається до «12°» і ліворуч стає значок 16 px (1.8 мм). Ясно → звичайне «12° надворі».",
+      "widgets": [
+        {
+          "type": "arc",
+          "align": "center",
+          "d": 214,
+          "width": 2,
+          "start": 270,
+          "end": 270,
+          "color": "$ringfg",
+          "opa": 0.3,
+          "track": "$ring",
+          "value": "$secpct",
+          "rounded": false,
+          "cost": {
+            "w": 18,
+            "h": 18,
+            "note": "один сектор 6°/с"
+          }
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": -16,
+          "y": 44,
+          "ink": true,
+          "font": 88,
+          "family": "dejavulight",
+          "color": "$time",
+          "text": "{hh}"
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": 16,
+          "y": 115,
+          "ink": true,
+          "font": 88,
+          "family": "dejavulight",
+          "color": "$time",
+          "text": "{mm}"
+        },
+        {
+          "type": "label",
+          "align": "bottom_mid",
+          "y": -32,
+          "font": 15,
+          "family": "dejavulight",
+          "color": "$slot",
+          "cycle": [
+            "{date}",
+            "{out}° надворі",
+            "{temp}°  {hum}%"
+          ],
+          "when": "!wx1"
+        },
+        {
+          "type": "label",
+          "align": "bottom_mid",
+          "y": -32,
+          "font": 15,
+          "family": "dejavulight",
+          "color": "$slot",
+          "cycle": [
+            "{date}",
+            "{out}°",
+            "{temp}°  {hum}%"
+          ],
+          "when": "wx1",
+          "x": 11
+        },
+        {
+          "type": "icon",
+          "name": "$weather",
+          "align": "bottom_mid",
+          "x": -18,
+          "y": -31,
+          "size": 16,
+          "color": "$slot",
+          "when": "wx1"
+        },
+        {
+          "type": "icon",
+          "name": "wifi_off",
+          "align": "top_right",
+          "x": -58,
+          "y": 54,
+          "size": 16,
+          "color": "$warn",
+          "when": "!link"
+        },
+        {
+          "type": "icon",
+          "name": "batt",
+          "align": "top_right",
+          "x": -58,
+          "y": 54,
+          "size": 16,
+          "color": "$battcolor",
+          "when": "link&&!usb"
+        }
+      ]
+    },
+    {
+      "id": "p-wxword",
+      "name": "P · L + статус + погода словом",
+      "note": "Те саме, але погода — словом, а не значком: слот сам каже «12° надворі» / «12° дощ» / «12° сніг» / «12° вітер». Жодного нового елемента, довжина рядка та сама, і на 1.2 мм текст різкіший за 1.8 мм піктограму. Порівняй з O.",
+      "widgets": [
+        {
+          "type": "arc",
+          "align": "center",
+          "d": 214,
+          "width": 2,
+          "start": 270,
+          "end": 270,
+          "color": "$ringfg",
+          "opa": 0.3,
+          "track": "$ring",
+          "value": "$secpct",
+          "rounded": false,
+          "cost": {
+            "w": 18,
+            "h": 18,
+            "note": "один сектор 6°/с"
+          }
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": -16,
+          "y": 44,
+          "ink": true,
+          "font": 88,
+          "family": "dejavulight",
+          "color": "$time",
+          "text": "{hh}"
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": 16,
+          "y": 115,
+          "ink": true,
+          "font": 88,
+          "family": "dejavulight",
+          "color": "$time",
+          "text": "{mm}"
+        },
+        {
+          "type": "label",
+          "align": "bottom_mid",
+          "y": -32,
+          "font": 15,
+          "family": "dejavulight",
+          "color": "$slot",
+          "cycle": [
+            "{date}",
+            "{out}° {wxword}",
+            "{temp}°  {hum}%"
+          ]
+        },
+        {
+          "type": "icon",
+          "name": "wifi_off",
+          "align": "top_right",
+          "x": -58,
+          "y": 54,
+          "size": 16,
+          "color": "$warn",
+          "when": "!link"
+        },
+        {
+          "type": "icon",
+          "name": "batt",
+          "align": "top_right",
+          "x": -58,
+          "y": 54,
+          "size": 16,
+          "color": "$battcolor",
+          "when": "link&&!usb"
+        }
+      ]
+    },
+    {
+      "id": "q-centred",
+      "name": "Q · Блок відцентровано (80 px)",
+      "note": "Геометричне виправлення: блок часу справді відцентровано по колу (був зміщений на 8.7 px угору, бо слот витісняв його вгору — і замкнене кільце це оголювало). Ціна — 88→80 px, цифра 6.4 мм замість 7.1. Прямий, без нахилу.",
+      "widgets": [
+        {
+          "type": "arc",
+          "align": "center",
+          "d": 214,
+          "width": 2,
+          "start": 270,
+          "end": 270,
+          "color": "$ringfg",
+          "opa": 0.3,
+          "track": "$ring",
+          "value": "$secpct",
+          "rounded": false,
+          "cost": {
+            "w": 18,
+            "h": 18,
+            "note": "один сектор 6°/с"
+          }
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": -16,
+          "y": 59,
+          "ink": true,
+          "font": 80,
+          "family": "dejavulight",
+          "color": "$time",
+          "text": "{hh}"
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": 16,
+          "y": 124,
+          "ink": true,
+          "font": 80,
+          "family": "dejavulight",
+          "color": "$time",
+          "text": "{mm}"
+        },
+        {
+          "type": "label",
+          "align": "bottom_mid",
+          "y": -30,
+          "font": 15,
+          "family": "dejavulight",
+          "color": "$slot",
+          "cycle": [
+            "{date}",
+            "{out}° {wxword}",
+            "{temp}°  {hum}%"
+          ]
+        },
+        {
+          "type": "icon",
+          "name": "wifi_off",
+          "align": "top_right",
+          "x": -66,
+          "y": 62,
+          "size": 16,
+          "color": "$warn",
+          "when": "!link"
+        },
+        {
+          "type": "icon",
+          "name": "batt",
+          "align": "top_right",
+          "x": -66,
+          "y": 62,
+          "size": 16,
+          "color": "$battcolor",
+          "when": "link&&!usb"
+        }
+      ]
+    },
+    {
+      "id": "r-centred-slant",
+      "name": "R · Відцентровано + нахил 12°",
+      "note": "Q плюс нахил. Нахил «/» тягне обидва критичні кути всередину: верх годин їде праворуч, низ хвилин ліворуч — тобто це не лише маскування, а й реальне збільшення просвіту.",
+      "widgets": [
+        {
+          "type": "arc",
+          "align": "center",
+          "d": 214,
+          "width": 2,
+          "start": 270,
+          "end": 270,
+          "color": "$ringfg",
+          "opa": 0.3,
+          "track": "$ring",
+          "value": "$secpct",
+          "rounded": false,
+          "cost": {
+            "w": 18,
+            "h": 18,
+            "note": "один сектор 6°/с"
+          }
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": -16,
+          "y": 59,
+          "ink": true,
+          "font": 80,
+          "family": "dejavulight",
+          "color": "$time",
+          "text": "{hh}",
+          "slant": 12
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": 16,
+          "y": 124,
+          "ink": true,
+          "font": 80,
+          "family": "dejavulight",
+          "color": "$time",
+          "text": "{mm}",
+          "slant": 12
+        },
+        {
+          "type": "label",
+          "align": "bottom_mid",
+          "y": -30,
+          "font": 15,
+          "family": "dejavulight",
+          "color": "$slot",
+          "cycle": [
+            "{date}",
+            "{out}° {wxword}",
+            "{temp}°  {hum}%"
+          ]
+        },
+        {
+          "type": "icon",
+          "name": "wifi_off",
+          "align": "top_right",
+          "x": -66,
+          "y": 62,
+          "size": 16,
+          "color": "$warn",
+          "when": "!link"
+        },
+        {
+          "type": "icon",
+          "name": "batt",
+          "align": "top_right",
+          "x": -66,
+          "y": 62,
+          "size": 16,
+          "color": "$battcolor",
+          "when": "link&&!usb"
+        }
+      ]
+    },
+    {
+      "id": "s-slant-only",
+      "name": "S · Тільки нахил, без центрування",
+      "note": "Стара геометрія (88 px, блок вище центру) плюс нахил 12° — щоб побачити, скільки дає сам нахил без виправлення центрування.",
+      "widgets": [
+        {
+          "type": "arc",
+          "align": "center",
+          "d": 214,
+          "width": 2,
+          "start": 270,
+          "end": 270,
+          "color": "$ringfg",
+          "opa": 0.3,
+          "track": "$ring",
+          "value": "$secpct",
+          "rounded": false,
+          "cost": {
+            "w": 18,
+            "h": 18,
+            "note": "один сектор 6°/с"
+          }
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": -16,
+          "y": 44,
+          "ink": true,
+          "font": 88,
+          "family": "dejavulight",
+          "color": "$time",
+          "text": "{hh}",
+          "slant": 12
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": 16,
+          "y": 115,
+          "ink": true,
+          "font": 88,
+          "family": "dejavulight",
+          "color": "$time",
+          "text": "{mm}",
+          "slant": 12
+        },
+        {
+          "type": "label",
+          "align": "bottom_mid",
+          "y": -32,
+          "font": 15,
+          "family": "dejavulight",
+          "color": "$slot",
+          "cycle": [
+            "{date}",
+            "{out}° {wxword}",
+            "{temp}°  {hum}%"
+          ]
+        },
+        {
+          "type": "icon",
+          "name": "wifi_off",
+          "align": "top_right",
+          "x": -66,
+          "y": 54,
+          "size": 16,
+          "color": "$warn",
+          "when": "!link"
+        },
+        {
+          "type": "icon",
+          "name": "batt",
+          "align": "top_right",
+          "x": -66,
+          "y": 54,
+          "size": 16,
+          "color": "$battcolor",
+          "when": "link&&!usb"
+        }
+      ]
+    },
+    {
+      "id": "s2-baked",
+      "name": "S₂ · Нахил запечений у TTF",
+      "note": "Те саме, що S, але нахил не імітується зсувом канви — рендериться справжнім DejaVuSans-ExtraLight-Oblique.ttf, згенерованим tools/fonts/make_oblique.py. Це перевірка, що те, що ми бачили, і те, що збереться в прошивку, — одне й те саме.",
+      "widgets": [
+        {
+          "type": "arc",
+          "align": "center",
+          "d": 214,
+          "width": 2,
+          "start": 270,
+          "end": 270,
+          "color": "$ringfg",
+          "opa": 0.3,
+          "track": "$ring",
+          "value": "$secpct",
+          "rounded": false,
+          "cost": {
+            "w": 18,
+            "h": 18,
+            "note": "один сектор 6°/с"
+          }
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": -16,
+          "y": 44,
+          "ink": true,
+          "font": 88,
+          "family": "dejavuobl",
+          "color": "$time",
+          "text": "{hh}"
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": 16,
+          "y": 115,
+          "ink": true,
+          "font": 88,
+          "family": "dejavuobl",
+          "color": "$time",
+          "text": "{mm}"
+        },
+        {
+          "type": "label",
+          "align": "bottom_mid",
+          "y": -32,
+          "font": 15,
+          "family": "dejavulight",
+          "color": "$slot",
+          "cycle": [
+            "{date}",
+            "{out}° {wxword}",
+            "{temp}°  {hum}%"
+          ]
+        },
+        {
+          "type": "icon",
+          "name": "wifi_off",
+          "align": "top_right",
+          "x": -66,
+          "y": 54,
+          "size": 16,
+          "color": "$warn",
+          "when": "!link"
+        },
+        {
+          "type": "icon",
+          "name": "batt",
+          "align": "top_right",
+          "x": -66,
+          "y": 54,
+          "size": 16,
+          "color": "$battcolor",
+          "when": "link&&!usb"
+        }
+      ]
+    },
+    {
+      "id": "e-horizon",
+      "name": "E · Горизонт",
+      "note": "Час у рядок, двокрапка блимає (дві точки-прямокутники — 0.01 с на такт, фактично безкоштовно), кільця секунд немає. Горизонт CO2 займає низ і володіє єдиним кольором на екрані. Найспокійніше обличчя: нічого не рухається, крім двокрапки.",
+      "widgets": [
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": -51,
+          "y": 43,
+          "font": 64,
+          "color": "$time",
+          "text": "{hh}"
+        },
+        {
+          "type": "rect",
+          "align": "top_mid",
+          "y": 78,
+          "w": 7,
+          "h": 7,
+          "radius": 3,
+          "color": "$time",
+          "blink": true
+        },
+        {
+          "type": "rect",
+          "align": "top_mid",
+          "y": 98,
+          "w": 7,
+          "h": 7,
+          "radius": 3,
+          "color": "$time",
+          "blink": true
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": 52,
+          "y": 43,
+          "font": 64,
+          "color": "$time",
+          "text": "{mm}"
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "y": 118,
+          "font": 15,
+          "color": "$slot",
+          "cycle": [
+            "{date}",
+            "{out}° надворі",
+            "{temp}°  {hum}%"
+          ]
+        },
+        {
+          "type": "line",
+          "box": [
+            46,
+            144,
+            148,
+            32
+          ],
+          "width": 2,
+          "color": "$co2",
+          "series": "co2",
+          "fill": true,
+          "fill_opa": 0.16
+        }
+      ]
+    },
+    {
+      "id": "g-all",
+      "name": "G · Все разом",
+      "note": "Компроміс: стос 76 px (цифра 6.1 мм), кільце секунд, горизонт і слот — усі чотири елементи разом. Щільніше за F, але все ще в межах кола ⌀206. Перевір овердрайв: між хвилинами і горизонтом лишається 8 px, це 0.9 мм.",
+      "widgets": [
+        {
+          "type": "arc",
+          "align": "center",
+          "d": 214,
+          "width": 3,
+          "start": 270,
+          "end": 270,
+          "color": "$co2",
+          "track": "$ring",
+          "value": "$secpct",
+          "rounded": false,
+          "cost": {
+            "w": 18,
+            "h": 18,
+            "note": "один сектор 6°/с, не весь bbox"
+          }
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "y": 3,
+          "font": 76,
+          "color": "$time",
+          "text": "{hh}"
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "y": 63,
+          "font": 76,
+          "color": "$time",
+          "text": "{mm}"
+        },
+        {
+          "type": "line",
+          "box": [
+            56,
+            152,
+            128,
+            26
+          ],
+          "width": 2,
+          "color": "$co2",
+          "series": "co2",
+          "fill": true,
+          "fill_opa": 0.16
+        },
+        {
+          "type": "label",
+          "align": "bottom_mid",
+          "y": -36,
+          "font": 15,
+          "color": "$slot",
+          "cycle": [
+            "{date}",
+            "{out}° надворі",
+            "{temp}°  {hum}%"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "d-current",
+      "name": "D · Current firmware",
+      "note": "What is flashed today, redrawn to scale. Six information blocks in 27 mm — the 12 px labels here are 1.35 mm tall, which is roughly the size of the fine print on a pill packet.",
+      "widgets": [
+        {
+          "type": "label",
+          "align": "top_mid",
+          "y": 26,
+          "font": 20,
+          "color": "#EEEEEE",
+          "text": "{clock}"
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "y": 50,
+          "font": 14,
+          "color": "#888888",
+          "text": "{date}"
+        },
+        {
+          "type": "line",
+          "box": [
+            40,
+            130,
+            160,
+            32
+          ],
+          "width": 2,
+          "color": "$co2",
+          "opa": 0.5,
+          "series": "co2"
+        },
+        {
+          "type": "label",
+          "align": "center",
+          "y": -12,
+          "font": 40,
+          "color": "$co2",
+          "text": "{co2}"
+        },
+        {
+          "type": "label",
+          "align": "center",
+          "y": 22,
+          "font": 12,
+          "color": "#777777",
+          "text": "PPM  CO2"
+        },
+        {
+          "type": "label",
+          "align": "center",
+          "y": 38,
+          "font": 12,
+          "color": "$co2",
+          "text": "{status_en}"
+        },
+        {
+          "type": "rect",
+          "align": "center",
+          "y": 54,
+          "w": 140,
+          "h": 1,
+          "color": "#222222"
+        },
+        {
+          "type": "label",
+          "align": "center",
+          "y": 72,
+          "font": 16,
+          "color": "#00E5FF",
+          "text": "{temp}°C   {hum}%"
+        },
+        {
+          "type": "label",
+          "align": "bottom_mid",
+          "y": -22,
+          "font": 12,
+          "color": "#888888",
+          "text": "{batt_v}V ({batt_pct}%) {power}"
+        }
+      ]
+    },
+    {
+      "id": "a-factory",
+      "name": "A · [CO2-first] Factory-faithful",
+      "note": "Re-cut of the Honeywell layout: open-bottom gauge arc, status word inside, ppm under it, RH/temp on the baseline. Arc widened to 180 px and the status word capped at 22 px so the longest Ukrainian label (ПРОВІТРИ, 111 px) still clears the ring's inner chord.",
+      "widgets": [
+        {
+          "type": "icon",
+          "name": "wifi",
+          "align": "top_left",
+          "x": 48,
+          "y": 28,
+          "size": 15,
+          "color": "$dim"
+        },
+        {
+          "type": "icon",
+          "name": "batt",
+          "align": "top_right",
+          "x": -48,
+          "y": 28,
+          "size": 15,
+          "color": "$dim"
+        },
+        {
+          "type": "arc",
+          "align": "center",
+          "y": -8,
+          "d": 180,
+          "width": 13,
+          "start": 145,
+          "end": 35,
+          "color": "$co2",
+          "track": "#1E1E1E",
+          "value": "$co2pct"
+        },
+        {
+          "type": "label",
+          "align": "center",
+          "y": -34,
+          "font": 22,
+          "color": "$co2",
+          "text": "{status}"
+        },
+        {
+          "type": "label",
+          "align": "center",
+          "x": -16,
+          "y": -4,
+          "font": 32,
+          "color": "$fg",
+          "text": "{co2}"
+        },
+        {
+          "type": "label",
+          "align": "center",
+          "x": 34,
+          "y": -9,
+          "font": 12,
+          "color": "$dim",
+          "text": "CO2"
+        },
+        {
+          "type": "label",
+          "align": "center",
+          "x": 34,
+          "y": 4,
+          "font": 12,
+          "color": "$dim",
+          "text": "PPM"
+        },
+        {
+          "type": "label",
+          "align": "bottom_left",
+          "x": 30,
+          "y": -44,
+          "font": 19,
+          "color": "$fg",
+          "text": "{hum}%"
+        },
+        {
+          "type": "label",
+          "align": "bottom_right",
+          "x": -30,
+          "y": -44,
+          "font": 19,
+          "color": "$fg",
+          "text": "{temp}°"
+        },
+        {
+          "type": "label",
+          "align": "bottom_mid",
+          "y": -18,
+          "font": 15,
+          "color": "$dim",
+          "text": "{clock}"
+        }
+      ]
+    },
+    {
+      "id": "b-bignum",
+      "name": "B · [CO2-first] Big number",
+      "note": "Legibility first: the ppm number is 88 px = 10 mm tall, readable across a room. Everything else is secondary and sits on the top/bottom edges. Colour is carried by a full-width bar so the level is readable even when the digits are not.",
+      "widgets": [
+        {
+          "type": "label",
+          "align": "top_left",
+          "x": 14,
+          "y": 12,
+          "font": 20,
+          "color": "$dim",
+          "text": "{clock}"
+        },
+        {
+          "type": "icon",
+          "name": "batt",
+          "align": "top_right",
+          "x": -14,
+          "y": 14,
+          "size": 16,
+          "color": "$dim"
+        },
+        {
+          "type": "label",
+          "align": "center",
+          "y": -14,
+          "font": 88,
+          "color": "$co2",
+          "text": "{co2}"
+        },
+        {
+          "type": "label",
+          "align": "center",
+          "y": 40,
+          "font": 20,
+          "color": "$dim",
+          "text": "ppm CO2"
+        },
+        {
+          "type": "rect",
+          "align": "bottom_mid",
+          "y": -62,
+          "w": 168,
+          "h": 1,
+          "color": "#242424"
+        },
+        {
+          "type": "label",
+          "align": "bottom_left",
+          "x": 36,
+          "y": -34,
+          "font": 24,
+          "color": "$fg",
+          "text": "{temp}°"
+        },
+        {
+          "type": "label",
+          "align": "bottom_right",
+          "x": -36,
+          "y": -34,
+          "font": 24,
+          "color": "$fg",
+          "text": "{hum}%"
+        },
+        {
+          "type": "rect",
+          "align": "bottom_mid",
+          "y": -6,
+          "w": 240,
+          "h": 6,
+          "color": "$co2"
+        }
+      ]
+    },
+    {
+      "id": "c-ring",
+      "name": "C · [CO2-first] Edge ring",
+      "note": "The gauge is pushed to the very edge of the panel so the whole 27 mm square works as one indicator, leaving the middle free for a big number plus a real status word. The edge ring is also the cheapest thing to redraw: it is thin.",
+      "widgets": [
+        {
+          "type": "arc",
+          "align": "center",
+          "d": 234,
+          "width": 8,
+          "start": 130,
+          "end": 50,
+          "color": "$co2",
+          "track": "#181818",
+          "value": "$co2pct"
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "y": 36,
+          "font": 22,
+          "color": "$fg",
+          "text": "{clock}"
+        },
+        {
+          "type": "label",
+          "align": "center",
+          "y": -6,
+          "font": 66,
+          "color": "$co2",
+          "text": "{co2}"
+        },
+        {
+          "type": "label",
+          "align": "center",
+          "y": 40,
+          "font": 16,
+          "color": "$dim",
+          "text": "ppm"
+        },
+        {
+          "type": "label",
+          "align": "center",
+          "y": 64,
+          "font": 20,
+          "color": "$co2",
+          "text": "{status}"
+        },
+        {
+          "type": "label",
+          "align": "bottom_mid",
+          "y": -12,
+          "font": 19,
+          "color": "$dim",
+          "text": "{temp}°   {hum}%"
+        }
+      ]
+    }
+  ]
+}

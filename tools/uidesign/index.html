@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<title>HTRAM · Display Design Studio</title>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  :root{
+    --ppm: 8.5;            /* screen pixels per real millimetre (calibrate below) */
+    --zoom: 1;
+    --bg:#0d0f12; --panel:#15181d; --line:#252a31; --fg:#dfe4ea; --mut:#8892a0; --acc:#4dd0e1;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:13px/1.5 ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;}
+  .wrap{display:grid;grid-template-columns:1fr 380px;min-height:100vh}
+  .stage{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:28px}
+  .side{background:var(--panel);border-left:1px solid var(--line);padding:18px;overflow:auto;
+        max-height:100vh;display:flex;flex-direction:column;gap:16px}
+
+  /* ---- device mock: 80 mm body, 65 mm glass, 27 mm panel ---- */
+  .device{position:relative;
+    --s: calc(var(--ppm) * var(--zoom));
+    width: calc(80 * var(--s) * 1px);
+    height: calc(80 * var(--s) * 1px);
+    border-radius: calc(20 * var(--s) * 1px);
+    background: linear-gradient(160deg,#ffffff 0%,#f2f3f5 45%,#d9dcE0 100%);
+    box-shadow: 0 24px 60px rgba(0,0,0,.65), inset 0 1px 0 #fff;
+    display:grid;place-items:center;}
+  .glass{position:relative;
+    width: calc(65 * var(--s) * 1px);
+    height: calc(65 * var(--s) * 1px);
+    border-radius:50%;
+    background: radial-gradient(120% 90% at 30% 12%, #23262b 0%, #0a0b0d 42%, #000 75%);
+    box-shadow: inset 0 0 calc(3 * var(--s) * 1px) rgba(255,255,255,.10);
+    display:grid;place-items:center;overflow:hidden}
+  .glass::after{content:"";position:absolute;inset:0;border-radius:50%;pointer-events:none;
+    background:linear-gradient(155deg,rgba(255,255,255,.13) 0%,rgba(255,255,255,.03) 26%,transparent 46%)}
+  .led{position:absolute;top:calc(4.5 * var(--s) * 1px);left:50%;transform:translateX(-50%);
+    width:calc(22 * var(--s) * 1px);height:calc(2.2 * var(--s) * 1px);border-radius:999px;
+    background:var(--ledc,#00E676);filter:blur(calc(.35 * var(--s) * 1px));opacity:.95}
+  canvas#panel{
+    width: calc(27 * var(--s) * 1px);
+    height: calc(27 * var(--s) * 1px);
+    image-rendering: pixelated;
+    box-shadow:0 0 calc(2 * var(--s) * 1px) rgba(0,0,0,.9);
+    display:block}
+  .brand{position:absolute;bottom:calc(9 * var(--s) * 1px);left:50%;transform:translateX(-50%);
+    font-weight:700;letter-spacing:.04em;color:#3c4046;font-size:calc(3.4 * var(--s) * 1px)}
+
+  .stagebar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center}
+  .hint{color:var(--mut);font-size:12px;text-align:center;max-width:640px}
+
+  h2{font-size:11px;letter-spacing:.10em;text-transform:uppercase;color:var(--mut);
+     margin:0 0 8px;font-weight:600}
+  .card{border:1px solid var(--line);border-radius:10px;padding:12px;background:#11141896}
+  button,select{background:#1d2229;color:var(--fg);border:1px solid var(--line);
+     border-radius:7px;padding:6px 11px;font:inherit;cursor:pointer}
+  button:hover{border-color:var(--acc)}
+  button.on{background:var(--acc);color:#04252a;border-color:var(--acc);font-weight:600}
+  label.row{display:grid;grid-template-columns:74px 1fr 56px;gap:8px;align-items:center;margin:7px 0}
+  label.row span:first-child{color:var(--mut)}
+  label.row output{text-align:right;font-variant-numeric:tabular-nums;color:var(--acc)}
+  input[type=range]{width:100%;accent-color:var(--acc)}
+  .toggles{display:flex;gap:6px;flex-wrap:wrap}
+  textarea{width:100%;height:300px;background:#0b0d10;color:#cfe6ea;border:1px solid var(--line);
+     border-radius:8px;padding:10px;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{text-align:left;padding:3px 4px;border-bottom:1px solid #1c2026}
+  th{color:var(--mut);font-weight:500}
+  td.n{text-align:right;font-variant-numeric:tabular-nums}
+  .note{color:var(--mut);font-size:12px;margin:8px 0 0}
+  .err{color:#ff6b6b;font-size:12px;white-space:pre-wrap;margin-top:6px}
+  /* ISO/IEC 7810 ID-1 — every bank card on earth is 85.60 x 53.98 mm */
+  .card-cal{width:calc(85.6 * var(--ppm) * 1px);height:calc(53.98 * var(--ppm) * 1px);
+     border:2px solid var(--acc);border-radius:calc(3.18 * var(--ppm) * 1px);
+     margin:10px auto;position:relative;background:#4dd0e10d}
+  .card-cal::after{content:"85.60 mm";position:absolute;left:0;right:0;bottom:6px;text-align:center;
+     color:var(--acc);font-size:11px;letter-spacing:.04em}
+  .card-cal b{position:absolute;top:8px;left:10px;color:var(--mut);font-size:11px;font-weight:500}
+  .ruler{height:16px;margin-top:8px;
+     background:repeating-linear-gradient(90deg,var(--acc) 0,var(--acc) 1px,
+     transparent 1px,transparent calc(var(--ppm) * 1px));border-bottom:1px solid var(--acc)}
+  .cal-readout{display:flex;justify-content:space-between;color:var(--mut);font-size:11px;margin-top:6px}
+  .cal-readout b{color:var(--acc);font-variant-numeric:tabular-nums;font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <div class="row" style="display:flex;gap:26px;align-items:center;justify-content:center;flex-wrap:wrap">
+    <img id="ref" src="reference.webp" alt="factory display" hidden
+         style="width:calc(80 * var(--ppm) * var(--zoom) * 1px);border-radius:calc(4 * var(--ppm) * var(--zoom) * 1px)">
+    <div class="device" id="device">
+      <div class="glass">
+        <div class="led" id="led"></div>
+        <canvas id="panel" width="240" height="240"></canvas>
+      </div>
+      <div class="brand">HTRAM</div>
+    </div>
+    </div>
+
+    <div class="stagebar">
+      <button data-zoom="1" class="on">1:1 — real size</button>
+      <button data-zoom="2">2×</button>
+      <button data-zoom="4">4×</button>
+      <button data-zoom="8">8×</button>
+      <button id="btn-body">hide body</button>
+      <button id="btn-ref">reference</button>
+      <button id="btn-shot">contact sheet</button>
+    </div>
+    <div class="hint" id="hint"></div>
+  </div>
+
+  <div class="side">
+    <div class="card">
+      <h2>Variant</h2>
+      <select id="variant"></select>
+      <p class="note" id="vnote"></p>
+    </div>
+
+    <div class="card">
+      <h2>Live state</h2>
+      <label class="row"><span>CO2</span><input id="s-co2" type="range" min="400" max="2500" step="10"><output></output></label>
+      <label class="row"><span>Temp</span><input id="s-temp" type="range" min="5" max="35" step="0.1"><output></output></label>
+      <label class="row"><span>Humidity</span><input id="s-hum" type="range" min="10" max="90" step="1"><output></output></label>
+      <label class="row"><span>Battery</span><input id="s-batt" type="range" min="0" max="100" step="1"><output></output></label>
+      <label class="row"><span>Outdoor</span><input id="s-outdoor" type="range" min="-25" max="40" step="1"><output></output></label>
+      <label class="row"><span>Seconds</span><input id="s-seconds" type="range" min="0" max="59" step="1"><output></output></label>
+      <div class="toggles" style="margin-top:8px">
+        <span style="color:var(--mut);align-self:center">slot</span>
+        <button data-slot="0" class="on">date</button>
+        <button data-slot="1">outdoor</button>
+        <button data-slot="2">indoor</button>
+        <button id="t-run">▶ run clock</button>
+      </div>
+      <div class="toggles" style="margin-top:8px">
+        <span style="color:var(--mut);align-self:center">weather</span>
+        <button data-wx="clear" class="on">clear</button>
+        <button data-wx="rain">rain</button>
+        <button data-wx="snow">snow</button>
+        <button data-wx="wind">wind</button>
+      </div>
+      <div class="toggles" style="margin-top:8px">
+        <button id="t-link" class="on">HA link</button>
+        <button id="t-usb" class="on">USB</button>
+        <button id="t-chrg">Charging</button>
+        <button id="t-lang" class="on">UA</button>
+        <button id="t-sweep">▶ sweep CO2</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Overlays</h2>
+      <div class="toggles">
+        <button id="o-grid">20 px grid</button>
+        <button id="o-boxes">dirty rects</button>
+        <button id="o-cross">centre</button>
+        <button id="o-circle">safe circle</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Calibrate 1:1</h2>
+      <p class="note" style="margin:0 0 4px">Hold a bank card against the screen and
+        adjust until the outline matches it exactly. Then <b>1:1</b> really is 1:1,
+        and a 12 px label really is 1.35 mm.</p>
+      <div class="card-cal"><b>ID-1</b></div>
+      <label class="row"><span>px / mm</span>
+        <input id="s-ppm" type="range" min="1.5" max="16" step="0.02"><output></output></label>
+      <div class="toggles">
+        <button data-cal="-0.1">−0.1</button>
+        <button data-cal="-0.02">−0.02</button>
+        <button data-cal="0.02">+0.02</button>
+        <button data-cal="0.1">+0.1</button>
+        <button id="cal-reset">browser default</button>
+      </div>
+      <div class="ruler" title="one stripe per mm"></div>
+      <div class="cal-readout">
+        <span>panel: <b id="cal-panel"></b></span>
+        <span>screen: <b id="cal-dpi"></b></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>UART cost @115200</h2>
+      <table id="cost"></table>
+      <p class="note" id="costtotal"></p>
+    </div>
+
+    <div class="card">
+      <h2>layouts.json</h2>
+      <div class="toggles" style="margin-bottom:8px">
+        <button id="j-apply">apply</button>
+        <button id="j-reload">reload file</button>
+        <button id="j-save">download</button>
+        <button id="j-watch" class="on">auto-reload</button>
+      </div>
+      <textarea id="json" spellcheck="false"></textarea>
+      <div class="err" id="jerr"></div>
+    </div>
+  </div>
+</div>
+
+<script src="sim.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const ctx = $('#panel').getContext('2d');
+let rawText = '', watch = true, sweep = null;
+
+/* ---------- boot ---------- */
+async function loadFile(showErrors) {
+  try {
+    const r = await fetch('layouts.json?t=' + Date.now());
+    const t = await r.text();
+    if (t !== rawText) { rawText = t; $('#json').value = t; apply(t, false); }
+  } catch (e) {
+    if (showErrors) $('#jerr').textContent =
+      'Could not fetch layouts.json — serve this folder over http (see README), ' +
+      'or paste the spec into the box below and hit apply.\n' + e;
+  }
+}
+
+function apply(text, keepVariant = true) {
+  try {
+    const parsed = JSON.parse(text);
+    const prev = variant && variant.id;
+    spec = parsed;
+    const sel = $('#variant');
+    sel.innerHTML = '';
+    spec.variants.forEach(v => sel.add(new Option(v.name, v.id)));
+    const want = (keepVariant && prev) || (variant && variant.id) || spec.variants[0].id;
+    sel.value = spec.variants.some(v => v.id === want) ? want : spec.variants[0].id;
+    variant = spec.variants.find(v => v.id === sel.value);
+    $('#jerr').textContent = '';
+    draw();
+  } catch (e) { $('#jerr').textContent = String(e); }
+}
+
+/* ---------- draw + panels ---------- */
+function draw() {
+  if (!spec || !variant) return;
+  render(ctx);
+  $('#vnote').textContent = variant.note || '';
+  $('#led').style.setProperty('--ledc', co2Band().color);
+  $('#hint').textContent =
+    `240 px across 27 mm = ${PX_PER_MM.toFixed(2)} px/mm.  ` +
+    `A ${'font'} size of 20 px is ${(20 / PX_PER_MM).toFixed(1)} mm tall — ` +
+    `the 65 mm black circle is mostly bezel, only the middle 27 mm lights up.`;
+  costTable();
+}
+
+function costTable() {
+  const rows = boxes.map(b => {
+    const c = widgetCost(b.wdg, b.box);
+    const name = b.wdg.text ? resolveText(b.wdg.text).slice(0, 14) : b.wdg.type + (b.wdg.name ? ':' + b.wdg.name : '');
+    return { name: name + (c.note ? ' *' : ''), w: b.box[2], h: b.box[3], ...c };
+  }).sort((a, b) => b.bytes - a.bytes);
+  const full = cost(240, 240);
+  $('#cost').innerHTML =
+    '<tr><th>element</th><th class="n">px</th><th class="n">bytes</th><th class="n">ms</th></tr>' +
+    rows.map(r => `<tr><td>${r.name}</td><td class="n">${r.w}×${r.h}</td>` +
+      `<td class="n">${r.bytes.toLocaleString()}</td><td class="n">${r.ms.toFixed(0)}</td></tr>`).join('');
+  $('#costtotal').innerHTML =
+    `Full 240×240 repaint: <b>${full.bytes.toLocaleString()} B ≈ ${(full.ms / 1000).toFixed(1)} s</b>. ` +
+    `Sum of this layout's dirty rects: <b>${(rows.reduce((a, r) => a + r.ms, 0) / 1000).toFixed(2)} s</b>. ` +
+    `Anything redrawn every minute must stay well under a second.`;
+}
+
+/* ---------- controls ---------- */
+function bindRange(sel, key, fmt) {
+  const el = $(sel), out = el.parentNode.querySelector('output');
+  const sync = () => { out.textContent = fmt(state[key]); };
+  el.value = state[key];
+  el.addEventListener('input', () => { state[key] = parseFloat(el.value); sync(); draw(); });
+  sync();
+}
+bindRange('#s-co2', 'co2', v => v + '');
+bindRange('#s-temp', 'temp', v => v.toFixed(1) + '°');
+bindRange('#s-hum', 'hum', v => v + '%');
+bindRange('#s-batt', 'batt_pct', v => v + '%');
+bindRange('#s-outdoor', 'outdoor', v => v + '°');
+bindRange('#s-seconds', 'seconds', v => String(v).padStart(2, '0') + 's');
+
+function toggle(sel, fn, init) {
+  const el = $(sel);
+  if (init) el.classList.add('on');
+  el.addEventListener('click', () => { el.classList.toggle('on'); fn(el.classList.contains('on')); draw(); });
+}
+toggle('#t-usb', v => state.usb = v, true);
+toggle('#t-link', v => state.link = v, true);
+document.querySelectorAll('[data-wx]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-wx]').forEach(x => x.classList.remove('on'));
+  b.classList.add('on'); state.weather = b.dataset.wx; draw();
+}));
+toggle('#t-chrg', v => { state.charging = v; if (v) { state.usb = true; $('#t-usb').classList.add('on'); } });
+toggle('#o-grid', v => overlays.grid = v);
+toggle('#o-boxes', v => overlays.boxes = v);
+toggle('#o-cross', v => overlays.cross = v);
+toggle('#o-circle', v => overlays.circle = v);
+
+document.querySelectorAll('[data-slot]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-slot]').forEach(x => x.classList.remove('on'));
+  b.classList.add('on'); state.slot = +b.dataset.slot; draw();
+}));
+
+// Ticks seconds in real time so the ring creeps and the colon blinks; the slot
+// rotates every 7 s, the way it would on the device.
+let clockRun = null;
+$('#t-run').addEventListener('click', e => {
+  if (clockRun) { clearInterval(clockRun); clockRun = null; e.target.classList.remove('on'); return; }
+  e.target.classList.add('on');
+  clockRun = setInterval(() => {
+    state.seconds = (state.seconds + 1) % 60;
+    $('#s-seconds').value = state.seconds;
+    $('#s-seconds').parentNode.querySelector('output').textContent =
+      String(state.seconds).padStart(2, '0') + 's';
+    if (state.seconds % 7 === 0) {
+      state.slot = (state.slot + 1) % 3;
+      document.querySelectorAll('[data-slot]').forEach(x =>
+        x.classList.toggle('on', +x.dataset.slot === state.slot));
+    }
+    draw();
+  }, 1000);
+});
+
+$('#t-lang').addEventListener('click', e => {
+  state.lang = state.lang === 'ua' ? 'en' : 'ua';
+  e.target.textContent = state.lang.toUpperCase();
+  draw();
+});
+
+$('#t-sweep').addEventListener('click', e => {
+  if (sweep) { clearInterval(sweep); sweep = null; e.target.classList.remove('on'); return; }
+  e.target.classList.add('on');
+  let dir = 1;
+  sweep = setInterval(() => {
+    let v = state.co2 + dir * 25;
+    if (v > 2200) { v = 2200; dir = -1; }
+    if (v < 420) { v = 420; dir = 1; }
+    state.co2 = v; $('#s-co2').value = v;
+    $('#s-co2').parentNode.querySelector('output').textContent = v;
+    draw();
+  }, 60);
+});
+
+document.querySelectorAll('[data-zoom]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-zoom]').forEach(x => x.classList.remove('on'));
+  b.classList.add('on');
+  document.documentElement.style.setProperty('--zoom', b.dataset.zoom);
+}));
+$('#btn-ref').addEventListener('click', e => {
+  const r = $('#ref');
+  r.hidden = !r.hidden;
+  e.target.classList.toggle('on', !r.hidden);
+});
+
+$('#btn-body').addEventListener('click', e => {
+  const d = $('#device');
+  const hidden = d.style.background !== '';
+  if (hidden) { d.style.background = ''; d.style.boxShadow = ''; e.target.textContent = 'hide body'; }
+  else { d.style.background = 'none'; d.style.boxShadow = 'none'; e.target.textContent = 'show body'; }
+});
+
+// The browser's own idea of a millimetre: CSS mm is pinned to 96 dpi, which is
+// within ~20% on most screens — a far better starting point than a guess, and
+// the card calibration takes it the rest of the way.
+function browserPpm() {
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;visibility:hidden;width:100mm';
+  document.body.appendChild(probe);
+  const v = probe.getBoundingClientRect().width / 100;
+  probe.remove();
+  return +v.toFixed(2);
+}
+
+const ppm = $('#s-ppm'), ppmOut = ppm.parentNode.querySelector('output');
+const DEFAULT_PPM = browserPpm();
+ppm.value = localStorage.getItem('htram_ppm') || DEFAULT_PPM;
+function syncPpm() {
+  const v = Math.min(16, Math.max(1.5, +ppm.value));
+  ppm.value = v;
+  document.documentElement.style.setProperty('--ppm', v);
+  ppmOut.textContent = v.toFixed(2);
+  localStorage.setItem('htram_ppm', v);
+  $('#cal-panel').textContent = `${(240 / PX_PER_MM * v).toFixed(0)} px wide on screen`;
+  $('#cal-dpi').textContent = `${Math.round(v * 25.4)} dpi`;
+}
+ppm.addEventListener('input', syncPpm);
+document.querySelectorAll('[data-cal]').forEach(b => b.addEventListener('click', () => {
+  ppm.value = +ppm.value + parseFloat(b.dataset.cal); syncPpm();
+}));
+$('#cal-reset').addEventListener('click', () => { ppm.value = DEFAULT_PPM; syncPpm(); });
+syncPpm();
+
+/* Renders every variant side by side at 2x and drops the PNG in shots/ (or
+   downloads it if the static server is not the one in serve.py). */
+$('#btn-shot').addEventListener('click', async () => {
+  const Z = 2, PAD = 10, LBL = 22, cols = 2;
+  const rows = Math.ceil(spec.variants.length / cols);
+  const cw = 240 * Z + PAD, ch = 240 * Z + PAD + LBL;
+  const sheet = document.createElement('canvas');
+  sheet.width = cols * cw + PAD; sheet.height = rows * ch + PAD;
+  const sc = sheet.getContext('2d');
+  sc.fillStyle = '#202225'; sc.fillRect(0, 0, sheet.width, sheet.height);
+  sc.imageSmoothingEnabled = false;
+  const off = document.createElement('canvas'); off.width = off.height = 240;
+  const oc = off.getContext('2d'), saved = variant;
+  spec.variants.forEach((v, i) => {
+    variant = v; render(oc);
+    const x = PAD + (i % cols) * cw, y = PAD + Math.floor(i / cols) * ch;
+    sc.drawImage(off, x, y, 240 * Z, 240 * Z);
+    sc.fillStyle = '#cfd6de'; sc.font = '15px sans-serif';
+    sc.fillText(`${v.name}  @${Math.round(state.co2)} ppm`, x, y + 240 * Z + 16);
+  });
+  variant = saved; draw();
+  const b64 = sheet.toDataURL('image/png').split(',')[1];
+  const name = `variants-${Math.round(state.co2)}ppm.png`;
+  try {
+    const r = await fetch('/save', { method: 'POST', body: name + '|' + b64 });
+    if (!r.ok) throw 0;
+    $('#jerr').textContent = 'saved tools/uidesign/shots/' + name;
+  } catch {
+    const a = document.createElement('a');
+    a.href = 'data:image/png;base64,' + b64; a.download = name; a.click();
+  }
+});
+
+$('#variant').addEventListener('change', e => {
+  variant = spec.variants.find(v => v.id === e.target.value);
+  draw();
+});
+$('#j-apply').addEventListener('click', () => { watch = false; $('#j-watch').classList.remove('on'); apply($('#json').value); });
+$('#j-reload').addEventListener('click', () => { rawText = ''; loadFile(true); });
+$('#j-watch').addEventListener('click', e => { watch = !watch; e.target.classList.toggle('on', watch); });
+$('#j-save').addEventListener('click', () => {
+  const blob = new Blob([$('#json').value], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'layouts.json'; a.click();
+});
+
+setInterval(() => { if (watch) loadFile(false); }, 1000);
+setInterval(draw, 20000);   // keep the clock label honest
+
+Promise.all(Object.keys(FONTS).map(f => document.fonts.load(`16px ${f}`)))
+  .then(() => loadFile(true).then(draw));
+</script>
+</body>
+</html>
