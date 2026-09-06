@@ -60,47 +60,64 @@ void HtramGd32Component::setup() {
   }
 }
 
-void HtramGd32Component::loop() {
-  if (ota_mode_) return;
+void HtramGd32Component::loop() { this->pump_rx_(false); }
 
-  while (this->available()) {
+/* Length of the packet at the head of the buffer, or 0 if it is not complete
+   (or not yet identifiable). Clears the buffer on an unknown type. */
+size_t HtramGd32Component::head_packet_len_() {
+  if (rx_buffer_.size() < 3)
+    return 0;
+  switch (rx_buffer_[2]) {
+    case 0x01:
+      return 14;
+    case 0x02:
+      // magic(2)+type(1)+proto_ver(1)+fw_ver(2)+flags(1)+epoch(4)+git(4)+crc16(2)
+      return 17;
+    case 0x03:
+      // magic(2)+type(1)+state(1)+duration_ms(2)+crc16(2)
+      return 8;
+    case 0x04:
+      // magic(2)+type(1)+resume(1)+crc16(2)
+      return 6;
+    default:
+      ESP_LOGW(TAG, "Unknown packet type: 0x%02X", rx_buffer_[2]);
+      rx_buffer_.clear();
+      return 0;
+  }
+}
+
+/* flow_only is set while we are sitting inside LVGL's flush waiting for the
+   GD32 to release the stream. Dispatching a telemetry packet there would
+   publish sensor states, and their on_value automations call
+   lv_label_set_text -- mutating LVGL from inside its own render. That
+   re-entrancy crashed the ESP in lv_inv_area. So anything that is not a flow
+   packet is left in the buffer for the next ordinary loop(). */
+void HtramGd32Component::pump_rx_(bool flow_only) {
+  if (ota_mode_)
+    return;
+
+  for (;;) {
+    size_t need = this->head_packet_len_();
+    if (need != 0 && rx_buffer_.size() >= need) {
+      if (flow_only && rx_buffer_[2] != 0x04)
+        return;
+      this->process_packet_(rx_buffer_.data(), need);
+      rx_buffer_.erase(rx_buffer_.begin(), rx_buffer_.begin() + need);
+      continue;
+    }
+
+    if (!this->available())
+      return;
+
     uint8_t c;
     this->read_byte(&c);
     rx_buffer_.push_back(c);
 
-    // Sync on magic
-    if (rx_buffer_.size() >= 2) {
-      if (rx_buffer_[0] != 0xAA || rx_buffer_[1] != 0x55) {
-        rx_buffer_.erase(rx_buffer_.begin());
-        continue;
-      }
-    }
-
-    if (rx_buffer_.size() >= 3) {
-      uint8_t type = rx_buffer_[2];
-      size_t expected_len = 0;
-      if (type == 0x01) {
-        expected_len = 14;
-      } else if (type == 0x02) {
-        // pkt_hello_t: magic(2)+type(1)+proto_ver(1)+fw_ver(2)+flags(1)+epoch(4)+git(4)+crc16(2)
-        expected_len = 17;
-      } else if (type == 0x03) {
-        // pkt_button_event_t: magic(2)+type(1)+state(1)+duration_ms(2)+crc16(2) = 8 bytes
-        expected_len = 8;
-      } else if (type == 0x04) {
-        // pkt_flow_t: magic(2)+type(1)+resume(1)+crc16(2) = 6 bytes
-        expected_len = 6;
-      } else {
-        ESP_LOGW(TAG, "Unknown packet type: 0x%02X", type);
-        rx_buffer_.clear();
-        continue;
-      }
-
-      if (rx_buffer_.size() == expected_len) {
-        this->process_packet_(rx_buffer_.data(), expected_len);
-        rx_buffer_.clear();
-      }
-    }
+    // Resync: drop bytes until the buffer starts on the magic.
+    while (!rx_buffer_.empty() && rx_buffer_[0] != 0xAA)
+      rx_buffer_.erase(rx_buffer_.begin());
+    if (rx_buffer_.size() >= 2 && rx_buffer_[1] != 0x55)
+      rx_buffer_.erase(rx_buffer_.begin());
   }
 }
 
@@ -772,7 +789,7 @@ void HtramGd32Component::wait_for_flow(uint32_t timeout_ms) {
     return;
   const uint32_t start = millis();
   while (this->flow_paused_ && millis() - start < timeout_ms) {
-    this->loop();  // keep parsing the uplink so RESUME can land
+    this->pump_rx_(true);  // flow packets only -- see pump_rx_
     App.feed_wdt();
     delay(1);
   }

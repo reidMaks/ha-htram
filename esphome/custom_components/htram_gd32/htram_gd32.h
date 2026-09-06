@@ -60,6 +60,8 @@ class HtramGd32Component : public Component, public uart::UARTDevice {
 
  protected:
   bool flow_paused_{false};
+  size_t head_packet_len_();
+  void pump_rx_(bool flow_only);
 
   sensor::Sensor *co2_sensor_{nullptr};
   sensor::Sensor *temp_sensor_{nullptr};
