@@ -31,12 +31,18 @@ static uint16_t crc16_ccitt(const uint8_t *data, size_t len) {
 }
 
 // Single-cell Li-ion voltage (mV) -> state-of-charge %, piecewise-linear.
+//
+// The top point is 4180 mV, not the nominal 4200. The charger ends its CV
+// phase once the current falls below the taper threshold and releases CHRG,
+// and through the factory ADC constant that full cell reads back as ~4184 mV.
+// A curve topping out at 4200 would therefore never reach 100 %: a battery
+// that is done charging would sit at 99 % forever.
 static float batt_mv_to_pct(uint16_t mv) {
   static const struct {
     uint16_t mv;
     uint8_t pct;
   } curve[] = {{3200, 0},  {3400, 8},  {3550, 20}, {3650, 35}, {3720, 50}, {3780, 62},
-               {3850, 72}, {3950, 84}, {4050, 93}, {4150, 98}, {4200, 100}};
+               {3850, 72}, {3950, 84}, {4050, 93}, {4120, 97}, {4180, 100}};
   const size_t n = sizeof(curve) / sizeof(curve[0]);
   if (mv <= curve[0].mv) return 0.0f;
   if (mv >= curve[n - 1].mv) return 100.0f;
