@@ -13,9 +13,17 @@ esphome:
   # plain "htram".
   name_add_mac_suffix: true
   on_boot:
-    - text_sensor.template.publish:
-        id: device_id
-        state: !lambda "return esphome::get_mac_address().substr(6);"
+    - priority: 600
+      then:
+        - text_sensor.template.publish:
+            id: device_id
+            state: !lambda "return esphome::get_mac_address().substr(6);"
+    # LVGL builds its widget tree in setup(), so anything that touches ui_* has
+    # to wait until every component is up.
+    - priority: -100
+      then:
+        - script.execute: refresh_leds
+        - script.execute: refresh_face
 
 esp32:
   board: esp32dev
@@ -83,11 +91,21 @@ wifi:
   password: !secret wifi_password
   ap:
     ssid: "${friendly_name} Setup"
+    # The fallback AP is the only way into a unit that cannot reach the house
+    # network, and web_server sits behind it with full control of the device.
+    # An open AP hands that to anyone within radio range.
+    password: !secret ap_password
 
 captive_portal:
 
 web_server:
   port: 80
+  # Reachable from the whole LAN, and from anyone on the fallback AP. Digest
+  # rather than basic: the password never crosses the wire in a reversible form.
+  auth:
+    type: digest
+    username: !secret web_username
+    password: !secret web_password
 
 external_components:
   - source: custom_components
@@ -142,6 +160,22 @@ font:
     glyphsets:
       - GF_Cyrillic_Core
 
+  # Everything the face says when it cannot show a clock: the two failure
+  # messages, the IP address, and -- the reason the Latin alphabet is in here --
+  # the fallback AP's own SSID and password, which are the one thing a user
+  # cannot look up anywhere else at that moment. 22 px = 2.5 mm.
+  #
+  # The Cyrillic part is an explicit list rather than GF_Cyrillic_Core: eleven
+  # letters are actually used, and the glyphset would cost ~200 glyphs at 22 px.
+  # The punctuation set is what a Wi-Fi password realistically contains; a
+  # password using anything outside it renders as a placeholder box, so either
+  # keep ap_password alphanumeric or extend this line.
+  - file: "fonts/NotoSans-Regular.ttf"
+    id: font_msg
+    size: 22
+    bpp: 4
+    glyphs: " !#$%&()*+,-.:;=?@[]_{}~/0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzаежімнрсучє"
+
 globals:
   - id: ha_link
     type: bool
@@ -159,6 +193,26 @@ globals:
     type: bool
     restore_value: true
     initial_value: "true"
+  # 0 = clock, 1 = no time, 2 = no network, -1 = unknown/overlay dirtied it.
+  # lv_label_set_text invalidates unconditionally, so the message is only
+  # written when the state behind it actually changed.
+  - id: face_state
+    type: int
+    restore_value: false
+    initial_value: "-1"
+  # The AP face has two pages: 0 = QR to scan, 1 = the same credentials as text.
+  - id: ap_page
+    type: int
+    restore_value: false
+    initial_value: "0"
+  # Set by the first button press on the AP face. Until then the two pages
+  # alternate on their own, which is what makes the second one discoverable;
+  # afterwards the button owns them, because seven seconds is not enough to
+  # copy a password and a timer that takes it away mid-word is hostile.
+  - id: ap_manual
+    type: bool
+    restore_value: false
+    initial_value: "false"
 
 script:
   # Hours and minutes are separate labels: only the minutes row is dirty most of
@@ -189,15 +243,19 @@ script:
   - id: show_device_id
     mode: restart
     then:
+      - script.stop: show_network
       - lambda: |-
           /* Identifying a unit is a deliberate act, not a glance, so it takes
              over the whole face rather than whispering from the caption line
              at 1.7 mm. The clock comes back six seconds later. */
           id(slot_hold) = true;
+          id(face_state) = -1;
           std::string s = esphome::get_mac_address().substr(6);
           lv_label_set_text(id(ui_devid), s.c_str());
           lv_obj_t *const hide[] = {id(ui_h1), id(ui_h2), id(ui_m1), id(ui_m2),
-                                    id(ui_slot), id(ui_pocket)};
+                                    id(ui_slot), id(ui_pocket), id(ui_msg),
+                                    id(ui_msg_sub), id(ui_msg_cap), id(ui_msg2),
+                                    id(ui_ap_card), id(ui_ap_qr)};
           for (auto *o : hide) lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
           lv_obj_remove_flag(id(ui_devid), LV_OBJ_FLAG_HIDDEN);
           lv_obj_remove_flag(id(ui_devid_cap), LV_OBJ_FLAG_HIDDEN);
@@ -205,10 +263,120 @@ script:
       - lambda: |-
           lv_obj_add_flag(id(ui_devid), LV_OBJ_FLAG_HIDDEN);
           lv_obj_add_flag(id(ui_devid_cap), LV_OBJ_FLAG_HIDDEN);
-          lv_obj_t *const show[] = {id(ui_h1), id(ui_h2), id(ui_m1), id(ui_m2),
-                                    id(ui_slot), id(ui_pocket)};
-          for (auto *o : show) lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+          lv_obj_remove_flag(id(ui_pocket), LV_OBJ_FLAG_HIDDEN);
           id(slot_hold) = false;
+      - script.execute: refresh_face
+      - script.execute: refresh_clock
+      - script.execute: refresh_slot
+      - script.execute: refresh_pocket
+
+  # A clock with no time is dashes, and dashes look like a broken screen rather
+  # than an explanation. Whenever the time is not set, the face says why instead.
+  # A working clock is never hidden: losing the network while the time is
+  # already known leaves the clock alone and speaks through the pocket and slot.
+  - id: refresh_face
+    then:
+      - lambda: |-
+          if (id(slot_hold)) return;  // the ID / IP overlay owns the face
+
+          // The fallback AP is the only state where the device is actively
+          // asking for help and can do nothing else useful -- no HA, no
+          // weather, nothing. So it outranks even a valid clock.
+          const bool ap = captive_portal::global_captive_portal != nullptr &&
+                          captive_portal::global_captive_portal->is_active();
+          const bool net = wifi::global_wifi_component->is_connected();
+          const bool have_time = id(ha_time).now().is_valid();
+
+          const int want = ap ? 3 : (have_time ? 0 : (net ? 1 : 2));
+          if (want != 3) id(ap_manual) = false;
+          if (want == id(face_state)) return;
+          id(face_state) = want;
+
+          lv_obj_t *const face[] = {id(ui_h1), id(ui_h2), id(ui_m1), id(ui_m2),
+                                    id(ui_slot)};
+          for (auto *o : face) {
+            if (want == 0)
+              lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+            else
+              lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+          }
+
+          lv_obj_t *const msg[] = {id(ui_msg_cap), id(ui_msg), id(ui_msg_sub),
+                                   id(ui_msg2), id(ui_ap_card), id(ui_ap_qr)};
+          for (auto *o : msg) lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+          if (want == 0) return;
+
+          if (want == 3) {
+            // Both strings come from the running config rather than being
+            // repeated here, so they cannot drift from what the radio answers.
+            auto cfg = wifi::global_wifi_component->get_ap();
+            const std::string ssid = cfg.get_ssid().c_str();
+            const std::string pass = cfg.get_password().c_str();
+
+            lv_label_set_text(id(ui_msg_cap), "точка доступу");
+            lv_obj_align(id(ui_msg_cap), LV_ALIGN_CENTER, 0,
+                         id(ap_page) == 0 ? 76 : -62);
+            lv_obj_remove_flag(id(ui_msg_cap), LV_OBJ_FLAG_HIDDEN);
+
+            if (id(ap_page) == 0) {
+              // The whole join, in one scan. The modules land at ~0.55 mm on a
+              // 27 mm panel, which is close to what a phone camera resolves --
+              // hence page 1, which is the same credentials typed out.
+              const std::string qr = "WIFI:T:WPA;S:" + ssid + ";P:" + pass + ";;";
+              lv_qrcode_update(id(ui_ap_qr), qr.c_str(), qr.size());
+              lv_obj_remove_flag(id(ui_ap_card), LV_OBJ_FLAG_HIDDEN);
+              lv_obj_remove_flag(id(ui_ap_qr), LV_OBJ_FLAG_HIDDEN);
+              return;
+            }
+
+            lv_label_set_text(id(ui_msg), ssid.c_str());
+            lv_obj_align(id(ui_msg), LV_ALIGN_CENTER, 0, -30);
+            lv_label_set_text(id(ui_msg_sub), "пароль");
+            lv_obj_align(id(ui_msg_sub), LV_ALIGN_CENTER, 0, 4);
+            lv_label_set_text(id(ui_msg2), pass.c_str());
+            lv_obj_align(id(ui_msg2), LV_ALIGN_CENTER, 0, 34);
+            lv_obj_remove_flag(id(ui_msg), LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(id(ui_msg_sub), LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(id(ui_msg2), LV_OBJ_FLAG_HIDDEN);
+            return;
+          }
+
+          lv_label_set_text(id(ui_msg), net ? "немає часу" : "немає мережі");
+          lv_obj_align(id(ui_msg), LV_ALIGN_CENTER, 0, -14);
+          lv_label_set_text(id(ui_msg_sub),
+                            net ? "чекаю сервер часу" : "шукаю мережу");
+          lv_obj_align(id(ui_msg_sub), LV_ALIGN_CENTER, 0, 16);
+          lv_obj_remove_flag(id(ui_msg), LV_OBJ_FLAG_HIDDEN);
+          lv_obj_remove_flag(id(ui_msg_sub), LV_OBJ_FLAG_HIDDEN);
+
+  # Double-click: the address, for the six seconds it takes to type it in.
+  # Same deliberate-act reasoning as the device id -- nothing permanent on the
+  # face for something needed twice a year, but reachable without a router UI.
+  - id: show_network
+    mode: restart
+    then:
+      - script.stop: show_device_id
+      - lambda: |-
+          id(slot_hold) = true;
+          id(face_state) = -1;
+          std::string ip = id(wifi_ip).state;
+          if (ip.empty() || ip == "0.0.0.0") ip = "немає мережі";
+          lv_label_set_text(id(ui_msg_cap), "адреса");
+          lv_obj_align(id(ui_msg_cap), LV_ALIGN_CENTER, 0, -24);
+          lv_label_set_text(id(ui_msg), ip.c_str());
+          lv_obj_align(id(ui_msg), LV_ALIGN_CENTER, 0, 2);
+          lv_obj_add_flag(id(ui_msg_sub), LV_OBJ_FLAG_HIDDEN);
+          lv_obj_remove_flag(id(ui_msg_cap), LV_OBJ_FLAG_HIDDEN);
+          lv_obj_t *const hide[] = {id(ui_h1), id(ui_h2), id(ui_m1), id(ui_m2),
+                                    id(ui_slot), id(ui_pocket), id(ui_devid),
+                                    id(ui_devid_cap), id(ui_msg2),
+                                    id(ui_ap_card), id(ui_ap_qr)};
+          for (auto *o : hide) lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+          lv_obj_remove_flag(id(ui_msg), LV_OBJ_FLAG_HIDDEN);
+          lv_obj_remove_flag(id(ui_msg_sub), LV_OBJ_FLAG_HIDDEN);
+      - delay: 6s
+      - lambda: id(slot_hold) = false;
+      - script.execute: refresh_face
       - script.execute: refresh_clock
       - script.execute: refresh_slot
       - script.execute: refresh_pocket
@@ -235,6 +403,10 @@ script:
               break;
             }
             case 1: {
+              if (!wifi::global_wifi_component->is_connected()) {
+                snprintf(buf, sizeof(buf), "немає мережі");
+                break;
+              }
               if (isnan(id(outdoor_temp).state)) { snprintf(buf, sizeof(buf), "--° надворі"); break; }
               // The condition replaces the last word rather than adding a glyph:
               // a 1.8 mm pictogram is ambiguous where a 1.2 mm word is not.
@@ -296,7 +468,15 @@ script:
   - id: refresh_leds
     then:
       - lambda: |-
-          if (!id(led_auto) || isnan(id(sensor_co2).state)) return;
+          if (!id(led_auto)) return;
+          // The GD32 lights green at boot to say "I am alive", and the NDIR
+          // needs minutes before it has a number. Leaving that green up meant
+          // the device asserted clean air while it had measured nothing at all,
+          // which is the one claim it must never make on faith.
+          if (isnan(id(sensor_co2).state)) {
+            id(htram_core)->send_leds(0, 0, 0, 0);
+            return;
+          }
           uint16_t ppm = (uint16_t) id(sensor_co2).state;
           id(htram_core)->send_leds(ppm >= 1500, ppm >= 1000 && ppm < 1500, ppm < 1000, 0);
 
@@ -322,6 +502,14 @@ interval:
     then:
       - lambda: id(slot_idx) = (id(slot_idx) + 1) % 3;
       - script.execute: refresh_slot
+      # Same rhythm flips the AP face between the QR and the typed credentials,
+      # until somebody takes the wheel with the button.
+      - lambda: |-
+          if (id(face_state) == 3 && !id(ap_manual)) {
+            id(ap_page) ^= 1;
+            id(face_state) = -1;   // force refresh_face to repaint
+            id(refresh_face).execute();
+          }
 
   # Polled, not edge-tracked: on_client_disconnected fires whenever any client
   # leaves, so a passing `esphome logs` session used to latch the warning on.
@@ -335,6 +523,7 @@ interval:
           else:
             - lambda: |-
                 if (id(ha_link)) { id(ha_link) = false; id(refresh_pocket).execute(); }
+      - script.execute: refresh_face
 
 time:
   - platform: homeassistant
@@ -343,6 +532,19 @@ time:
       then:
         - script.execute: refresh_clock
         - script.execute: refresh_slot
+        - script.execute: refresh_face
+
+  # The face is a clock, and until now the only thing that could set it was Home
+  # Assistant -- so a unit that rebooted while HA was down showed dashes forever.
+  # SNTP writes the same system clock, so id(ha_time) reads valid either way;
+  # whichever source answers first wins and the other simply confirms it.
+  - platform: sntp
+    id: net_time
+    on_time_sync:
+      then:
+        - script.execute: refresh_clock
+        - script.execute: refresh_slot
+        - script.execute: refresh_face
 
 lvgl:
   displays:
@@ -464,6 +666,75 @@ lvgl:
               text: "ID"
               hidden: true
 
+          # The QR's quiet zone: lv_qrcode paints the light colour only under
+          # the modules themselves, and a code that runs straight into black
+          # pixels does not scan.
+          - obj:
+              id: ui_ap_card
+              align: center
+              y: -14
+              width: 140
+              height: 140
+              radius: 6
+              bg_color: 0xFFFFFF
+              bg_opa: cover
+              border_width: 0
+              pad_all: 0
+              scrollable: false
+              clickable: false
+              hidden: true
+
+          - qrcode:
+              id: ui_ap_qr
+              align: center
+              y: -14
+              size: 124
+              dark_color: 0x000000
+              light_color: 0xFFFFFF
+              hidden: true
+
+          # Shown only when the clock cannot be: these replace the digits rather
+          # than sharing the face with them. Four slots, because the AP face has
+          # to label two Latin strings that mean nothing on their own -- the
+          # network name and its password. Positions are set at runtime by
+          # refresh_face, since a two-line face and a four-line face cannot
+          # share one set of offsets.
+          - label:
+              id: ui_msg_cap
+              align: center
+              y: -56
+              text_font: font_slot
+              text_color: 0x707880
+              text: ""
+              hidden: true
+
+          - label:
+              id: ui_msg
+              align: center
+              y: -6
+              text_font: font_msg
+              text_color: 0xC2C8D0
+              text: ""
+              hidden: true
+
+          - label:
+              id: ui_msg_sub
+              align: center
+              y: 22
+              text_font: font_slot
+              text_color: 0x707880
+              text: ""
+              hidden: true
+
+          - label:
+              id: ui_msg2
+              align: center
+              y: 30
+              text_font: font_msg
+              text_color: 0xC2C8D0
+              text: ""
+              hidden: true
+
           - label:
               id: ui_slot
               align: bottom_mid
@@ -582,6 +853,15 @@ binary_sensor:
       id: htram_button
 
 text_sensor:
+  - platform: wifi_info
+    ip_address:
+      id: wifi_ip
+      name: "IP Address"
+      entity_category: diagnostic
+    ssid:
+      name: "SSID"
+      entity_category: diagnostic
+
   - platform: version
     name: "ESPHome Version"
   - platform: template
@@ -601,6 +881,22 @@ text_sensor:
     button_action:
       name: "Button Action"
       on_value:
+        # On the AP face a single click turns the page, and stops the rotation
+        # so the credentials stay put for as long as it takes to type them.
+        - if:
+            condition:
+              lambda: return x == "single" && id(face_state) == 3;
+            then:
+              - lambda: |-
+                  id(ap_manual) = true;
+                  id(ap_page) ^= 1;
+                  id(face_state) = -1;
+              - script.execute: refresh_face
+        - if:
+            condition:
+              lambda: return x == "double";
+            then:
+              - script.execute: show_network
         - if:
             condition:
               lambda: return x == "triple";
