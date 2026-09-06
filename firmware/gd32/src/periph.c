@@ -19,6 +19,7 @@ static void system_clock_config(void)
     RCU_CFG0 &= ~(0x3FF0U);
     RCU_CFG0 |= (4U << 8); /* APB1PSC = 100 (/2) */
 
+
     /* Config PLL: SRC = IRC8M/2, MUL = 18 */
     /* Clear PLLSEL (bit 16), PLLMF[3:0] (bits 21:18), PLLMF4 (bit 27) */
     RCU_CFG0 &= ~((1U << 16) | (0xFU << 18) | (1U << 27));
@@ -49,15 +50,46 @@ void periph_init(void)
     /* Enable GPIO Clocks */
     RCU_AHBEN |= RCU_AHBEN_PAEN | RCU_AHBEN_PBEN | RCU_AHBEN_PCEN;
 
-    /* 1. System Power Latch Rails */
+    /* 1. System Power Latch Rails
+     *
+     * DIAG_MINIMAL builds drive only what the ESP32 needs to stay reachable
+     * (PB3 here, PF7 below) and release everything else. The battery does not
+     * charge on USB, and this isolates whether anything we drive is holding the
+     * charger off -- PC15 in particular is documented as "Main DC-DC enable".
+     * Recover with a normal OTA.
+     *
+     * The release has to be explicit: OTA hands over with a soft jump, so the
+     * previous firmware's GPIO configuration survives into this one. Simply
+     * not configuring a pin leaves it driven exactly as it was. */
+#ifdef DIAG_MINIMAL
+    gpio_cfg_in(GPIOC_BASE, 15, 0);  /* Main DC-DC latch -- prime suspect */
+    gpio_cfg_in(GPIOA_BASE, 1, 0);   /* VLED */
+    gpio_cfg_in(GPIOB_BASE, 2, 0);
+    gpio_cfg_in(GPIOB_BASE, 9, 0);   /* CO2 sensor power */
+    gpio_cfg_in(GPIOB_BASE, 11, 0);  /* 5V boost */
+    gpio_cfg_in(GPIOC_BASE, 14, 0);  /* LEDs */
+    gpio_cfg_in(GPIOB_BASE, 4, 0);
+    gpio_cfg_in(GPIOB_BASE, 5, 0);
+    gpio_cfg_in(GPIOB_BASE, 0, 0);   /* buzzer */
+    gpio_cfg_in(GPIOB_BASE, 8, 0);   /* backlight PWM */
+    gpio_cfg_in(GPIOB_BASE, 12, 0);  /* display RES/SCK/CS/SDA */
+    gpio_cfg_in(GPIOB_BASE, 13, 0);
+    gpio_cfg_in(GPIOB_BASE, 14, 0);
+    gpio_cfg_in(GPIOB_BASE, 15, 0);
+#endif
+
+#ifndef DIAG_MINIMAL
     gpio_cfg_out_pp(GPIOC_BASE, 15);
     GPIOC_BOP = (1 << 15); /* PC15 = 1 (Main DC-DC Latch) */
+#endif
 
     gpio_cfg_out_pp(GPIOB_BASE, 3);
     GPIOB_BOP = (1 << 3);  /* PB3 = 1 (Peripheral Power Rail) */
 
+#ifndef DIAG_MINIMAL
     gpio_cfg_out_pp(GPIOA_BASE, 1);
     GPIOA_BOP = (1 << 1);  /* PA1 = 1 (VLED Switch Enable) */
+#endif
 
     /* PF7 = Master peripheral power enable (display panel + ESP32 rail).
      * The factory firmware drives PF7 HIGH to power the system on; ours never
@@ -71,6 +103,7 @@ void periph_init(void)
     GPIO_BOP(GPIOF_BASE) = (1 << 7);
     delay_ms(20); /* let the peripheral rail settle before display/ESP init */
 
+#ifndef DIAG_MINIMAL
     /* 2. Front LEDs (PC14 Green, PB4 Yellow, PB5 Red) */
     gpio_cfg_out_pp(GPIOC_BASE, 14);
     gpio_cfg_out_pp(GPIOB_BASE, 4);
@@ -80,6 +113,7 @@ void periph_init(void)
     /* 3. Buzzer (PB0 = TIMER2_CH2 PWM tone) */
     buzzer_init();
     GPIOB_BC = (1 << 0);
+#endif
 
     /* 4. Button SW1 (PA0, Active-HIGH) */
     gpio_cfg_in(GPIOA_BASE, 0, 2); /* Pulldown */
@@ -92,7 +126,11 @@ void periph_init(void)
      *    GD32F150xx datasheet §pinout) */
     RCU_APB2EN |= RCU_APB2EN_ADCEN;
     *(volatile uint32_t *)0x40021004 |= 0x8000; /* RCU_CFG0 APB2/6 */
-    *(volatile uint32_t *)0x40021030 |= 0x0100; /* RCU_CFG2 ADC clock source */
+    /* RCU_CFG2 bit 8 = ADCSEL: the ADC runs from IRC14M, not from APB2/ADCPSC.
+     * That is what keeps it inside its 14 MHz ceiling and, importantly, makes
+     * it immune to system_clock_config() moving APB2 to 72 MHz -- the ADCPSC
+     * field above is dead code while this bit is set. */
+    *(volatile uint32_t *)0x40021030 |= 0x0100;
 
     /* PB2 is driven HIGH once and then left alone. It gates neither the SHT30
      * nor the battery divider: bench probe tools/swd/battery_test.c reads the
@@ -100,8 +138,21 @@ void periph_init(void)
      * (2589 vs 2590) either way. The datasheet gives PB2 no analog function at
      * all. HIGH matches the factory init; toggling it per reading only risked
      * disturbing the bus for nothing. */
+#ifndef DIAG_MINIMAL
+    /* PB2 LOW. Driving it HIGH is what kept the battery from charging for two
+     * days: with PB2=1 the charger never starts (CHRG stays released), and the
+     * moment it goes low CHRG asserts and the cell begins to gain -- verified
+     * live over SWD, the transition is immediate.
+     *
+     * The factory does exactly this: PB2=1 while the device is awake and doing
+     * something, PB2=0 in its charging/idle state. §5 recorded that PB2 gates
+     * neither the SHT30 nor the battery divider, which is true, and we wrongly
+     * concluded from that it gates nothing at all -- the bench test never asked
+     * about the charger. Its actual function is still unknown; what is known is
+     * that HIGH blocks charging and LOW does not break anything we use. */
     gpio_cfg_out_pp(GPIOB_BASE, 2);
-    GPIOB_BOP = (1 << 2);
+    GPIOB_BC = (1 << 2);
+#endif
 
     /* PB1 as Analog: Mode 11, No pull */
     uint32_t ctl_b = GPIO_CTL(GPIOB_BASE);
@@ -318,7 +369,12 @@ int periph_read_battery(uint16_t *batt_mv, uint8_t *is_usb_present, uint8_t *is_
         *is_usb_present = usb ? 1 : 0;
     }
     if (is_charging) {
-        *is_charging = (usb && chrg_pin) ? 1 : 0;
+        /* CHRG is open-drain and ACTIVE LOW: measured 0 over SWD while the
+         * factory image was visibly charging, and 1 both with charging stopped
+         * and with no USB at all (our pull-up). The old reading was inverted,
+         * which is why telemetry claimed "Charging" for a whole day while the
+         * cell gained nothing. See GD32_HARDWARE_MAP §6.5d. */
+        *is_charging = (usb && !chrg_pin) ? 1 : 0;
     }
 
     /* Start conversion on Channel 9 (PB1) */
