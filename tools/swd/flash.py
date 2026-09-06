@@ -269,14 +269,29 @@ def main() -> int:
         url = f"http://{args.ota}/gd32_ota"
         user = args.user or web_credentials()[0]
         pw = args.password or web_credentials()[1]
-        auth = HTTPDigestAuth(user, pw) if user and pw else None
-        if auth is None:
+        sess = requests.Session()
+        if user and pw:
+            sess.auth = HTTPDigestAuth(user, pw)
+            # Digest needs a challenge before it can sign anything, and requests
+            # gets that challenge by sending the request once unauthenticated,
+            # eating the 401, then repeating it. With a 10 KB image attached
+            # that means uploading twice, the first time into a request the
+            # server abandons mid-body -- which fails or succeeds depending on
+            # timing, and did both on consecutive runs. Priming the handshake
+            # on an empty GET leaves the session holding a nonce, so the POST
+            # below goes out signed, once.
+            try:
+                sess.get(f"http://{args.ota}/", timeout=10)
+            except requests.RequestException as e:
+                print(f"[ota] Could not reach the device to authenticate: {e}",
+                      file=sys.stderr)
+                return 1
+        else:
             print("[ota] no web credentials found; if the device has web_server "
                   "auth enabled this will fail with 401", file=sys.stderr)
         print(f"[ota] POSTing image to {url} ... (this will take 5-10 seconds)")
         try:
-            resp = requests.post(url, files={'file': ('firmware.bin', img)},
-                                 auth=auth, timeout=30)
+            resp = sess.post(url, files={'file': ('firmware.bin', img)}, timeout=30)
         except requests.RequestException as e:
             print(f"[ota] Request failed: {e}", file=sys.stderr)
             return 1
