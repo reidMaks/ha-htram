@@ -6,7 +6,11 @@ SRAM-resident streaming programmer (flash_writer.c), OR via OTA through the ESP3
 Run with the repo venv python:
   .venv/bin/python tools/swd/flash.py                    # flash our firmware (build/gd32_firmware.bin)
   .venv/bin/python tools/swd/flash.py --factory          # restore the factory dump (gd32_flash.bin)
-  .venv/bin/python tools/swd/flash.py --ota htram.local  # flash via OTA over ESP32 HTTP
+  .venv/bin/python tools/swd/flash.py --ota 192.168.0.78 # flash via OTA over ESP32 HTTP
+
+The ESP config sets name_add_mac_suffix, so the node announces itself with the
+MAC suffix -- "htram-9436b0.local" for the unit this was developed on, never a
+plain "htram.local".
 """
 import argparse
 import struct
@@ -18,13 +22,36 @@ from pathlib import Path
 
 import serial
 import requests
+from requests.auth import HTTPDigestAuth
 
 REPO = Path(__file__).resolve().parents[2]
 SWD = REPO / "tools/swd"
 PYOCD = REPO / ".venv/bin/pyocd"
 FW_IMAGE = REPO / "firmware/gd32/build/gd32_firmware.bin"
 FACTORY_IMAGE = SWD / "gd32_flash.bin"
+SECRETS = REPO / "esphome/secrets.yaml"
 CHUNK = 256
+
+
+def web_credentials():
+    """Username and password for the device's HTTP endpoints.
+
+    /gd32_ota is registered through WebServerBase::add_handler(), which wraps
+    every handler in AuthMiddlewareHandler once web_server has credentials --
+    and it must, because that endpoint flashes an arbitrary image into the
+    GD32. They are read out of esphome/secrets.yaml rather than passed on the
+    command line so they stay out of shell history; --user/--password override.
+    """
+    user = pw = None
+    if SECRETS.exists():
+        for line in SECRETS.read_text(encoding="utf-8").splitlines():
+            key, _, val = line.partition(":")
+            val = val.strip().strip('"').strip("'")
+            if key.strip() == "web_username":
+                user = val
+            elif key.strip() == "web_password":
+                pw = val
+    return user, pw
 
 
 def crc16_ccitt(data: bytes) -> int:
@@ -210,7 +237,10 @@ def main() -> int:
     ap.add_argument("--factory", action="store_true",
                     help="flash the factory dump (tools/swd/gd32_flash.bin)")
     ap.add_argument("--port", default="/dev/ttyACM0", help="UART bridge port (for SWD)")
-    ap.add_argument("--ota", help="IP or hostname of ESP32 for OTA flashing (e.g. htram.local)")
+    ap.add_argument("--ota", help="IP or hostname of ESP32 for OTA flashing "
+                                  "(e.g. 192.168.0.78 or htram-9436b0.local)")
+    ap.add_argument("--user", help="web_server username (default: from esphome/secrets.yaml)")
+    ap.add_argument("--password", help="web_server password (default: from esphome/secrets.yaml)")
     ap.add_argument("--swd-mem", action="store_true",
                     help="flash via SWD memory mailbox (no UART required)")
     ap.add_argument("--no-reset", action="store_true",
@@ -237,13 +267,25 @@ def main() -> int:
 
     if args.ota:
         url = f"http://{args.ota}/gd32_ota"
+        user = args.user or web_credentials()[0]
+        pw = args.password or web_credentials()[1]
+        auth = HTTPDigestAuth(user, pw) if user and pw else None
+        if auth is None:
+            print("[ota] no web credentials found; if the device has web_server "
+                  "auth enabled this will fail with 401", file=sys.stderr)
         print(f"[ota] POSTing image to {url} ... (this will take 5-10 seconds)")
         try:
-            resp = requests.post(url, files={'file': ('firmware.bin', img)}, timeout=30)
+            resp = requests.post(url, files={'file': ('firmware.bin', img)},
+                                 auth=auth, timeout=30)
         except requests.RequestException as e:
             print(f"[ota] Request failed: {e}", file=sys.stderr)
             return 1
-            
+
+        if resp.status_code == 401:
+            print("[ota] HTTP 401: wrong or missing web_server credentials "
+                  "(web_username / web_password in esphome/secrets.yaml)",
+                  file=sys.stderr)
+            return 1
         if resp.status_code != 200:
             print(f"[ota] HTTP {resp.status_code}: {resp.text}", file=sys.stderr)
             return 1

@@ -43,6 +43,12 @@ The ESP stages the image, checks it, and drives the GD32's bootloader. Requires
 a working ESP, which requires a working GD32 to power it -- see the warning
 above about why that pairing matters.
 
+`/gd32_ota` sits behind the web server's digest auth -- it flashes an arbitrary
+image into the GD32, so it is the last endpoint that should be open on the LAN.
+`flash.py` reads `web_username` / `web_password` out of `esphome/secrets.yaml`
+by itself; `--user` / `--password` override that. An `HTTP 401` means those
+credentials are missing or wrong, not that the device is unwell.
+
 **SWD** -- when OTA cannot be used, needs the Pico debugprobe on the bench:
 
 ```bash
