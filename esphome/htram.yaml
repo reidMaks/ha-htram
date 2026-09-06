@@ -22,14 +22,6 @@ logger:
 api:
   encryption:
     key: !secret api_key
-  # The status pocket shows a warning when the link drops: with no HA there is
-  # no outdoor temperature and the clock will start to drift.
-  on_client_connected:
-    - lambda: id(ha_link) = true;
-    - script.execute: refresh_pocket
-  on_client_disconnected:
-    - lambda: id(ha_link) = false;
-    - script.execute: refresh_pocket
   services:
     - service: beep
       variables:
@@ -117,12 +109,15 @@ font:
   # 5 px wide and 1 bpp would shred it.
   - file: "fonts/DejaVuSans-ExtraLight-Oblique.ttf"
     id: font_clock
-    size: 88
+    size: 92
     bpp: 4
     glyphs: "0123456789-"
 
-  # The caption line stays upright.
-  - file: "fonts/DejaVuSans-ExtraLight.ttf"
+  # The caption line stays upright, and in a regular weight: measured at 15 px,
+  # ExtraLight has a 1 px stem that never reaches full white (peak 240/255),
+  # while Noto Sans gets 2 px at 255. Going bigger does not fix it -- ExtraLight
+  # is still 1 px at 17 px -- so this is about weight, not size.
+  - file: "fonts/NotoSans-Regular.ttf"
     id: font_slot
     size: 15
     bpp: 4
@@ -213,20 +208,36 @@ script:
   - id: refresh_pocket
     then:
       - lambda: |-
-          if (!id(ha_link)) {
-            lv_label_set_text(id(ui_pocket), "!");
-            lv_obj_set_style_text_color(id(ui_pocket), lv_color_hex(0xFF9E3D), LV_PART_MAIN);
-            return;
+          // Charge level and API link are independent facts, so they no longer
+          // gate each other: coupling them meant every gap between API clients
+          // (an `esphome logs` session ending counts) hid the battery.
+          const bool warn = !id(ha_link);
+          const bool on_batt = !id(sensor_usb).state &&
+                               !isnan(id(sensor_batt_level).state);
+
+          ESP_LOGD("pocket", "link=%d usb=%d batt=%.0f -> warn=%d batt_icon=%d",
+                   (int) id(ha_link), (int) id(sensor_usb).state,
+                   id(sensor_batt_level).state, (int) warn, (int) on_batt);
+
+          lv_label_set_text(id(ui_pocket), warn ? "!" : "");
+
+          lv_obj_t *const batt[3] = {id(ui_batt_body), id(ui_batt_nub), id(ui_batt_fill)};
+          for (int i = 0; i < 3; i++) {
+            if (on_batt)
+              lv_obj_remove_flag(batt[i], LV_OBJ_FLAG_HIDDEN);
+            else
+              lv_obj_add_flag(batt[i], LV_OBJ_FLAG_HIDDEN);
           }
-          if (!id(sensor_usb).state && !isnan(id(sensor_batt_level).state)) {
-            char buf[8];
-            snprintf(buf, sizeof(buf), "%.0f%%", id(sensor_batt_level).state);
-            lv_label_set_text(id(ui_pocket), buf);
-            lv_obj_set_style_text_color(id(ui_pocket),
-                lv_color_hex(id(sensor_batt_level).state < 20 ? 0xFF9E3D : 0x707880), LV_PART_MAIN);
-            return;
-          }
-          lv_label_set_text(id(ui_pocket), "");
+          if (!on_batt) return;
+
+          const float pct = id(sensor_batt_level).state;
+          const uint32_t c = pct < 20 ? 0xFF9E3D : 0x9AA2AC;
+          int w = (int) lroundf(18.0f * (pct < 0 ? 0 : (pct > 100 ? 100 : pct)) / 100.0f);
+          if (w < 1) w = 1;
+          lv_obj_set_width(id(ui_batt_fill), w);
+          lv_obj_set_style_bg_color(id(ui_batt_fill), lv_color_hex(c), LV_PART_MAIN);
+          lv_obj_set_style_bg_color(id(ui_batt_nub), lv_color_hex(c), LV_PART_MAIN);
+          lv_obj_set_style_border_color(id(ui_batt_body), lv_color_hex(c), LV_PART_MAIN);
 
   # CO2 moved off the screen and onto the LEDs above it, so they have to
   # actually track it now.
@@ -246,8 +257,8 @@ interval:
           // Moving the dot invalidates only where it was and where it lands.
           float a = (now.second * 6.0f - 90.0f) * 3.14159265f / 180.0f;
           lv_obj_set_pos(id(ui_secdot),
-                         (lv_coord_t) lroundf(120.0f + 106.0f * cosf(a) - 3.5f),
-                         (lv_coord_t) lroundf(120.0f + 106.0f * sinf(a) - 3.5f));
+                         (lv_coord_t) lroundf(120.0f + 113.0f * cosf(a) - 3.5f),
+                         (lv_coord_t) lroundf(120.0f + 113.0f * sinf(a) - 3.5f));
           static int last_min = -1;
           if (now.minute != last_min) {
             last_min = now.minute;
@@ -259,6 +270,19 @@ interval:
     then:
       - lambda: id(slot_idx) = (id(slot_idx) + 1) % 3;
       - script.execute: refresh_slot
+
+  # Polled, not edge-tracked: on_client_disconnected fires whenever any client
+  # leaves, so a passing `esphome logs` session used to latch the warning on.
+  - interval: 5s
+    then:
+      - if:
+          condition: api.connected
+          then:
+            - lambda: |-
+                if (!id(ha_link)) { id(ha_link) = true; id(refresh_pocket).execute(); }
+          else:
+            - lambda: |-
+                if (id(ha_link)) { id(ha_link) = false; id(refresh_pocket).execute(); }
 
 time:
   - platform: homeassistant
@@ -298,9 +322,9 @@ lvgl:
           - obj:
               id: ui_ring
               align: center
-              width: 214
-              height: 214
-              radius: 107
+              width: 228
+              height: 228
+              radius: 114
               bg_opa: TRANSP
               border_width: 2
               border_color: 0xB9AFA3
@@ -312,7 +336,7 @@ lvgl:
           - obj:
               id: ui_secdot
               x: 116
-              y: 10
+              y: 3
               width: 7
               height: 7
               radius: 4
@@ -329,11 +353,15 @@ lvgl:
           # rows overlapping, so LVGL no longer merges them into one repaint.
           # One label per digit. Only the digit that actually changed is
           # invalidated, so nine minutes out of ten the repaint is a single
-          # 57x67 box instead of the whole 113 px pair.
+          # 59x70 box instead of the whole 118 px pair.
+          #
+          # 92 px is the ceiling while the date stays inside the ring: the
+          # hours row needs 82 px of half-width (pair + stagger + the oblique's
+          # overhang) and the circle only offers that from y=44 down.
           - label:
               id: ui_h1
               align: top_mid
-              x: -44
+              x: -46
               y: 44
               text_font: font_clock
               text_color: 0xF0EAE0
@@ -341,7 +369,7 @@ lvgl:
           - label:
               id: ui_h2
               align: top_mid
-              x: 12
+              x: 14
               y: 44
               text_font: font_clock
               text_color: 0xF0EAE0
@@ -349,16 +377,16 @@ lvgl:
           - label:
               id: ui_m1
               align: top_mid
-              x: -12
-              y: 115
+              x: -14
+              y: 120
               text_font: font_clock
               text_color: 0xF0EAE0
               text: "-"
           - label:
               id: ui_m2
               align: top_mid
-              x: 44
-              y: 115
+              x: 46
+              y: 120
               text_font: font_clock
               text_color: 0xF0EAE0
               text: "-"
@@ -366,19 +394,64 @@ lvgl:
           - label:
               id: ui_slot
               align: bottom_mid
-              y: -32
+              y: -25
               text_font: font_slot
-              text_color: 0x707880
+              text_color: 0xC2C8D0
               text: ""
 
           - label:
               id: ui_pocket
               align: top_right
-              x: -52
-              y: 52
+              x: -64
+              y: 70
               text_font: font_slot
-              text_color: 0x707880
+              text_color: 0xFF9E3D
               text: ""
+
+          # Battery, drawn rather than written. Sits in the pocket the stagger
+          # of the hours leaves free, and stays hidden while on USB.
+          - obj:
+              id: ui_batt_body
+              x: 166
+              y: 54
+              width: 22
+              height: 11
+              radius: 2
+              bg_opa: TRANSP
+              border_width: 1
+              border_color: 0x707880
+              pad_all: 0
+              scrollable: false
+              clickable: false
+              hidden: true
+          - obj:
+              id: ui_batt_nub
+              x: 188
+              y: 57
+              width: 2
+              height: 5
+              radius: 0
+              bg_color: 0x707880
+              bg_opa: cover
+              border_width: 0
+              pad_all: 0
+              scrollable: false
+              clickable: false
+              hidden: true
+          - obj:
+              id: ui_batt_fill
+              x: 168
+              y: 56
+              width: 12
+              height: 7
+              radius: 0
+              bg_color: 0x707880
+              bg_opa: cover
+              border_width: 0
+              pad_all: 0
+              scrollable: false
+              clickable: false
+              hidden: true
 
 sensor:
   - platform: wifi_signal
