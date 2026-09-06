@@ -75,13 +75,20 @@ int main(void)
 #endif
 
 #ifndef DIAG_MINIMAL
-    /* Draw Startup Screen */
+    /* Clear the panel and nothing more.
+     *
+     * There used to be a banner here -- name, version, "INITIALIZING..." --
+     * left over from before the ESP had a UI of its own. Its whole life was
+     * two seconds long, ending under the ESP's first frame, and its parting
+     * gift was a bug: drawing it raced the ESP's repaint, and the strip above
+     * y=44 that LVGL never invalidates again kept it on screen for good.
+     * Text we spend effort hiding is text that should not be drawn, so it now
+     * lives in the fallback below, where nothing covers it and someone is
+     * actually reading it.
+     *
+     * The fill stays: without it a wake from standby would leave the charge
+     * screen sitting there until the ESP paints over it. */
     display_fill_screen(COLOR_BLACK);
-    display_draw_string(40, 30, "HONEYWELL HTRAM", COLOR_GREEN, COLOR_BLACK);
-    display_draw_string(24, 50, "CUSTOM GD32 FIRMWARE", COLOR_WHITE, COLOR_BLACK);
-    display_draw_string(56, 70, "VERSION 1.0.0", COLOR_YELLOW, COLOR_BLACK);
-
-    display_draw_string(32, 110, "INITIALIZING...", COLOR_GRAY, COLOR_BLACK);
 
     /* 3. Initialize Sensors (SHT30 + CRIR M1 CO2) */
     sensors_init();
@@ -104,11 +111,15 @@ int main(void)
 #ifndef DIAG_MINIMAL
     periph_beep_blocking(2304, 50);
 #endif
-    protocol_send_hello();
-#ifndef DIAG_MINIMAL
-    display_fill_rect(20, 105, 200, 25, COLOR_BLACK);
-    display_draw_string(32, 110, "SENSORS ONLINE", COLOR_CYAN, COLOR_BLACK);
-#endif
+
+    /* Everything above ran while USART1 did not exist yet -- it is initialised
+     * four lines up -- so an ESP that was already awake and talking to us has
+     * been talking into a dead pin, and whatever it sent in that window is
+     * gone. This flag is how it learns to send its frame, its LEDs and its
+     * backlight again. (An ESP that boots *with* us cannot hear this either,
+     * being mid-boot itself; that case is covered by staying off the panel
+     * entirely, below.) */
+    protocol_send_hello_flags(HELLO_FLAG_BOOT);
 
     /* Live Status Loop Variables */
     int16_t temp_001c = 0;
@@ -128,6 +139,16 @@ int main(void)
     uint32_t last_telemetry_ms = 0;
     uint32_t last_ui_ms = 0;
     uint32_t btn_hold_start_ms = 0;
+    /* We stay off the panel entirely until this passes: long enough for an ESP
+     * booting alongside us to render its first full frame (1.25 s at 921600).
+     * Drawing into the middle of that frame is what used to strand fragments
+     * of our screen in the band LVGL never repaints.
+     *
+     * If no ESP ever answers, everything appears after this and the local UI
+     * works as it always did -- it is the only evidence the device is alive
+     * when the ESP is dead, so it is delayed, never removed. */
+    uint32_t ui_hold_until_ms = periph_millis() + 3000;
+    uint8_t local_header_drawn = 0;
 #ifndef DIAG_MINIMAL
     /* Green LED ON indicating ready */
     periph_set_leds(0, 0, 1, 100);
@@ -407,8 +428,20 @@ int main(void)
         }
 
         /* Update Local Screen (every 1000ms) - only if ESP32 hasn't taken over */
-        if (!protocol_is_external_display_active() && (now - last_ui_ms >= 1000)) {
+        if (!protocol_is_external_display_active() &&
+            (int32_t)(now - ui_hold_until_ms) >= 0 &&
+            (now - last_ui_ms >= 1000)) {
             last_ui_ms = now;
+
+            /* Reaching here at all means no CMD_DRAW_RECT ever arrived, so say
+             * so: the readings below are real, but the ESP is not driving this
+             * panel and whatever depends on it -- Home Assistant, the clock --
+             * is not running either. */
+            if (!local_header_drawn) {
+                local_header_drawn = 1;
+                display_draw_string(56, 30, "HTRAM GD32 1.0.0", COLOR_WHITE, COLOR_BLACK);
+                display_draw_string(48, 50, "WAITING FOR ESP32", COLOR_ORANGE, COLOR_BLACK);
+            }
 
             char buf[32];
 

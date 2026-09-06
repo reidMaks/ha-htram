@@ -148,13 +148,18 @@ void protocol_send_telemetry(uint16_t co2, int16_t temp, uint16_t hum, uint16_t 
 
 void protocol_send_hello(void)
 {
+    protocol_send_hello_flags(0);
+}
+
+void protocol_send_hello_flags(uint8_t extra_flags)
+{
     pkt_hello_t pkt;
     pkt.magic0 = PROTOCOL_MAGIC0;
     pkt.magic1 = PROTOCOL_MAGIC1;
     pkt.type = PKT_TYPE_HELLO;
     pkt.proto_ver = PROTOCOL_VERSION;
     pkt.fw_ver = GD32_FW_VERSION;
-    pkt.build_flags = BUILD_DIRTY;
+    pkt.build_flags = (uint8_t)(BUILD_DIRTY | extra_flags);
     pkt.build_epoch = BUILD_EPOCH;
     pkt.git_hash = BUILD_GIT_HASH;
     pkt.crc16 = crc16_ccitt(&pkt.type, sizeof(pkt) - 4);

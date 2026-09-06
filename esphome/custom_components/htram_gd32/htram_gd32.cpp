@@ -158,14 +158,18 @@ void HtramGd32Component::process_packet_(const uint8_t *data, size_t len) {
       this->temp_sensor_->publish_state(temp / 100.0f);
     if (this->hum_sensor_ != nullptr && !sensor_err)
       this->hum_sensor_->publish_state(hum / 100.0f);
-    if (this->batt_sensor_ != nullptr) this->batt_sensor_->publish_state(last_batt_mv_);
-    if (this->batt_level_sensor_ != nullptr)
-      this->batt_level_sensor_->publish_state(batt_mv_to_pct(last_batt_mv_));
-
+    // USB and charging go out first. The battery icon on the face is drawn by
+    // a script hanging off battery_level, and that script asks whether we are
+    // on USB -- so publishing the level first made every cold start flash a
+    // battery icon for the 100 ms until the USB flag caught up.
     bool usb = (last_status_ & 0x02) != 0;       // STATUS_FLAG_USB_PRESENT
     bool charging = (last_status_ & 0x01) != 0;  // STATUS_FLAG_CHARGING
     if (this->usb_sensor_ != nullptr) this->usb_sensor_->publish_state(usb);
     if (this->charging_sensor_ != nullptr) this->charging_sensor_->publish_state(charging);
+
+    if (this->batt_sensor_ != nullptr) this->batt_sensor_->publish_state(last_batt_mv_);
+    if (this->batt_level_sensor_ != nullptr)
+      this->batt_level_sensor_->publish_state(batt_mv_to_pct(last_batt_mv_));
 
     // LED state is device-authoritative: mirror the reported bits onto the switches.
     bool leds[3] = {
@@ -201,6 +205,15 @@ void HtramGd32Component::process_packet_(const uint8_t *data, size_t len) {
     if (this->fw_version_sensor_ != nullptr && fw_version_ != ver) {
       fw_version_ = ver;
       this->fw_version_sensor_->publish_state(ver);
+    }
+
+    // HELLO_FLAG_BOOT: the GD32 has restarted and has just finished drawing its
+    // own boot screen over whatever we had on the panel. Everything we sent
+    // while it was booting was lost -- its UART was not up yet -- so the face
+    // and the LEDs have to be sent again. See consume_gd32_boot().
+    if (flags & 0x02) {
+      ESP_LOGI(TAG, "GD32 announced a restart; display and LED state need resending");
+      this->gd32_booted_ = true;
     }
   } else if (type == 0x04) {
     // pkt_flow_t: resume(1). 0 = hold off the pixel stream, 1 = carry on.

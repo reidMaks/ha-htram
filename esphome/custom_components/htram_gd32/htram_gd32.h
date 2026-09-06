@@ -49,6 +49,23 @@ class HtramGd32Component : public Component, public uart::UARTDevice {
   void play_rtttl(const std::string &song);  // parse RTTTL, stream to GD32
   void send_draw_rect(uint8_t x, uint8_t y, uint8_t w, uint8_t h, const uint8_t *pixel_data, size_t len);
 
+  /* True once per GD32 restart, and cleared by the read.
+   *
+   * The GD32 sets HELLO_FLAG_BOOT on the first HELLO after it has drawn its
+   * own boot screen. Until that moment its USART1 did not exist, so anything
+   * we sent -- the top of the first LVGL frame, the LED command from on_boot --
+   * went into a pin that was not listening. Whoever polls this is expected to
+   * send all of it again. */
+  bool consume_gd32_boot() {
+    bool b = this->gd32_booted_;
+    this->gd32_booted_ = false;
+    return b;
+  }
+
+  /* Re-send the LED state we believe the device is in, after a GD32 restart
+   * dropped it. */
+  void resend_leds() { send_leds(led_state_[0], led_state_[1], led_state_[2], 1); }
+
   // Called by HtramLedSwitch on user command: channel 0=red 1=yellow 2=green.
   void set_led(uint8_t channel, bool state);
 
@@ -60,6 +77,7 @@ class HtramGd32Component : public Component, public uart::UARTDevice {
 
  protected:
   bool flow_paused_{false};
+  bool gd32_booted_{false};
   size_t head_packet_len_();
   void pump_rx_(bool flow_only);
 

@@ -483,6 +483,22 @@ script:
 interval:
   - interval: 1s
     then:
+      # A GD32 that has just restarted spent its first ~700 ms with no USART1,
+      # so the top of our last frame and every command we sent in that window
+      # were dropped on the floor -- which is why a standby wake used to leave
+      # a strip of the GD32's own boot screen across the top of the face, in
+      # the one band LVGL never invalidates again. It tells us when it is ready
+      # now; everything it missed goes out again here.
+      - lambda: |-
+          if (id(htram_core)->consume_gd32_boot()) {
+            ESP_LOGI("resync", "GD32 restarted: full repaint + LED/backlight resend");
+            id(htram_core)->send_backlight((uint8_t) id(screen_brightness).state);
+            id(htram_core)->resend_leds();
+            id(face_state) = -1;          // the face may be stale as well
+            id(refresh_face).execute();
+            id(refresh_leds).execute();   // auto mode overrides the resend
+            lv_obj_invalidate(lv_screen_active());
+          }
       - lambda: |-
           auto now = id(ha_time).now();
           if (!now.is_valid()) return;
@@ -921,6 +937,7 @@ button:
 number:
   - platform: template
     name: "Screen Brightness"
+    id: screen_brightness
     icon: "mdi:brightness-6"
     min_value: 0
     max_value: 100

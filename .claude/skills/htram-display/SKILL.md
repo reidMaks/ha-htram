@@ -30,6 +30,29 @@ merely shifted -- that is the one thing to check on a first flash.
 There is deliberately **no `rotation:` key** in the `lvgl:` block of
 `esphome/htram.yaml`. Do not add one back; you would rotate twice.
 
+## Who owns the panel, and when
+
+The GD32 draws first and hands over: `g_external_display_active` is set by the
+first `CMD_DRAW_RECT` and the local UI stops. Two rules keep that handover from
+leaving debris:
+
+- **The GD32 stays off the panel for its first 3 seconds**, drawing only a
+  clearing black fill. Its bit-banged SPI blocks the main loop for far longer
+  than the 22 ms its RX ring buys at 921600, so drawing while the ESP streams
+  its first full frame overruns the ring and eats a band of that frame -- and
+  the band above `y=44` is one LVGL never invalidates again, so whatever was
+  there stays for good. This is what used to strand the GD32's boot banner
+  across the top after every wake from standby.
+- **The banner only exists in the fallback.** If no `CMD_DRAW_RECT` has arrived
+  by then, the GD32 draws `WAITING FOR ESP32` plus live sensor lines -- the only
+  evidence the device works when the ESP is dead. In normal operation nothing
+  of the GD32's is ever shown, so nothing has to be hidden.
+
+After a GD32 restart the ESP repaints everything from scratch; see
+`HELLO_FLAG_BOOT` in `htram-link-protocol`. Expect one
+`lvgl took a long time (~1400 ms)` warning per restart -- that is the full
+115 KB frame, not a fault.
+
 ## Repaints cost UART bandwidth
 
 Every invalidated region becomes a `CMD_DRAW_RECT` frame carrying `w*h*2` bytes

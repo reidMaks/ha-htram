@@ -25,6 +25,14 @@ Downlink (ESP → GD32): `0x10` draw rect, `0x11` backlight, `0x12` LEDs,
 Telemetry status bits: charging `1<<0`, USB present `1<<1`, warm-up `1<<2`,
 sensor error `1<<3`, button `1<<4`, LEDs green/yellow/red `1<<5..7`.
 
+HELLO `build_flags`: dirty tree `1<<0`, **restart announcement `1<<1`**. The
+GD32 sets the second bit on the first HELLO after a reset, and the ESP answers
+it by repainting the whole screen and re-sending LEDs and backlight. It has to:
+until `protocol_init()` runs, roughly 700 ms in, USART1 does not exist, so
+anything the ESP sent while the GD32 was booting went into a dead pin. The
+keep-alive HELLO that rides every telemetry cycle carries the bit clear, which
+is what makes the two distinguishable.
+
 ## Changing a packet means changing two places
 
 Lengths are hardcoded on both sides. `head_packet_len_()` in the ESP component
