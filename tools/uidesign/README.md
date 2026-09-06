@@ -41,10 +41,11 @@ page and applied with **apply** / saved with **download**.
   the part of a widget that actually changed — but it is the number that tells
   you when a design is too expensive to redraw.
 
-**reference** puts the factory Honeywell photo (`reference.webp`, the same
-image as [`docs/factory-display.webp`](../../docs/factory-display.webp)) beside
-the mock, scaled to the same 80 mm body width, so the two are directly
-comparable. **contact sheet** renders every variant at 2× into `shots/`.
+**reference** puts a photo of the factory screen beside the mock, scaled to the
+same 80 mm body width, so the two are directly comparable. The photo is not in
+the repository -- the vendor's product shot is theirs, not ours -- so drop your
+own into `reference.webp` next to this file; it is gitignored. Without it the
+button just reports that the file is missing. **contact sheet** renders every variant at 2× into `shots/`.
 
 ## Spec reference
 

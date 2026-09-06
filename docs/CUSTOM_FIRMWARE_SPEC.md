@@ -426,7 +426,10 @@ CRIR M1 має заводське калібрування та автомати
 ### 12.2. Фотографії апаратної частини (Hardware Teardown)
 * [`docs/mainboard-front.jpeg`](mainboard-front.jpeg) — Фото лицьового боку материнської плати `Storm Shadow REV3` (модуль ESP32-WROOM-32E, NDIR-сенсор CO₂, зумер `LS1`, роз'єм micro-USB, коннектор акумулятора JST).
 * [`docs/mainboard-back.jpeg`](mainboard-back.jpeg) — Фото тильного боку плати (мікроконтролер `U8` GD32F150C8T6, мікросхема Flash `U4` Winbond 25Q32, FPC-шлейф дисплея `J3`, світлодіоди `LED03`–`LED07`, тестові точки `TP1`–`TP31`).
-* [`ESP32-wroom-32-pinout-mischianti-high-resolution.png`](../ESP32-wroom-32-pinout-mischianti-high-resolution.png) — Детальна схема розпіновки та каштеляцій модуля ESP32-WROOM-32.
+* [Схема розпіновки ESP32-WROOM-32](https://mischianti.org/wp-content/uploads/2021/02/ESP32-wroom-32-pinout-mischianti-high-resolution.png)
+  — детальна розпіновка та каштеляції модуля. Автор Renzo Mischianti,
+  [mischianti.org](https://mischianti.org/). Зображення навмисно не лежить у
+  репозиторії: воно чуже, і MIT-ліцензія цього проєкту не поширюється на нього.
 
 ### 12.3. Технічні звіти реверс-інжинірингу в репозиторії
 * [`tools/README.md`](../tools/README.md) — Фундаментальний звіт про дослідження заліза та протоколів:

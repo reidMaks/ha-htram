@@ -90,6 +90,7 @@
   <div class="stage">
     <div class="row" style="display:flex;gap:26px;align-items:center;justify-content:center;flex-wrap:wrap">
     <img id="ref" src="reference.webp" alt="factory display" hidden
+         onerror="this.dataset.missing = '1'"
          style="width:calc(80 * var(--ppm) * var(--zoom) * 1px);border-radius:calc(4 * var(--ppm) * var(--zoom) * 1px)">
     <div class="device" id="device">
       <div class="glass">
@@ -351,6 +352,13 @@ document.querySelectorAll('[data-zoom]').forEach(b => b.addEventListener('click'
 }));
 $('#btn-ref').addEventListener('click', e => {
   const r = $('#ref');
+  // reference.webp is gitignored: the factory product shot is the vendor's, so
+  // the repository ships without one and you drop your own photo in.
+  if (r.dataset.missing) {
+    $('#hint').textContent = 'no reference.webp here -- put a photo of the ' +
+      'factory screen next to index.html';
+    return;
+  }
   r.hidden = !r.hidden;
   e.target.classList.toggle('on', !r.hidden);
 });

@@ -3,8 +3,10 @@
 Доповнення до [display_ui_plan.md](display_ui_plan.md), який описує **канал**
 (`CMD_DRAW_RECT` + LVGL). Цей документ — про те, **що саме малювати**.
 
-Заводський референс: [factory-display.webp](factory-display.webp) (кнопка
-**reference** у пісочниці кладе його поруч із макетом у тому ж масштабі).
+Заводський референс у репозиторії не зберігається — продуктове зображення
+належить Honeywell. Поклади власне фото пристрою в `tools/uidesign/reference.webp`
+(файл у `.gitignore`), і кнопка **reference** у пісочниці покладе його поруч із
+макетом у тому ж масштабі.
 
 Пісочниця: [`tools/uidesign/`](../tools/uidesign/) — `python3 tools/uidesign/serve.py`,
 далі <http://localhost:8099>. **Перед оцінкою розмірів відкалібруй 1:1** банківською

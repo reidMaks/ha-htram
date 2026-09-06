@@ -153,6 +153,8 @@ This project is completely unofficial and is **not** endorsed, sponsored, certif
 ### 3. Clean-Room & Content Distribution
 This repository contains original open-source integration code, clean-room protocol specifications, and hardware documentation. It **does not** host, redistribute, or license any proprietary vendor firmware binaries, copyrighted graphic assets, or private cryptographic keys.
 
+Third-party material that *is* included is limited to fonts, each with its own licence alongside it in [`esphome/fonts/`](esphome/fonts/): Noto Sans under the SIL Open Font License 1.1, and DejaVu Sans ExtraLight (plus an oblique this project derived from it) under the Bitstream Vera licence. The MIT licence at the root covers this project's own code and documentation, not those fonts.
+
 ### 4. Hardware Safety & Limitation of Liability
 All software, scripts, hardware pinouts, and instructions are provided **"AS IS"**, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE. 
 
