@@ -118,7 +118,10 @@ int main(void)
     uint8_t is_usb_present = 0;
     uint8_t is_charging = 0;
     uint8_t warmup = 1;
-    uint8_t sensor_err = 0;
+    /* Starts set: until the first SHT30 fetch succeeds there is no reading to
+     * report, and the ESP uses this flag to hold back the publish rather than
+     * writing zeros into Home Assistant's history. */
+    uint8_t sensor_err = 1;
 
     uint32_t last_sht_ms = 0;
     uint32_t last_co2_ms = 0;

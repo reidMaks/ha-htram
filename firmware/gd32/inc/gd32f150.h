@@ -114,7 +114,9 @@
 
 #define USART_UEN       (1 << 0)
 #define USART_REN       (1 << 2)
-#define USART_TEN       (1 << 3)
+#define USART_TEN       (1 << 3)  /* CTL0: transmitter enable */
+#define USART_ORE       (1 << 3)  /* STAT: overrun -- same bit number as
+                                   * TEN above, but a different register */
 #define USART_RBNEIE    (1 << 5)  /* CTL0: RBNE interrupt enable */
 #define USART_RBNE      (1 << 5)  /* STAT: read data buffer not empty */
 #define USART_TC        (1 << 6)

@@ -49,15 +49,36 @@ void protocol_set_external_display(uint8_t active)
 
 void USART1_IRQHandler(void)
 {
-    while (USART1_STAT & USART_RBNE) {
-        uint8_t b = (uint8_t)USART1_RDATA; /* read clears RBNE */
-        uint16_t next = (uint16_t)((rx_head + 1) & (RX_RING_SIZE - 1));
-        if (next != rx_tail) {
-            rx_ring[rx_head] = b;
-            rx_head = next;
+    /* ORE has to be handled here, not just RBNE.
+     *
+     * An overrun raises the same interrupt but does NOT set RBNE, and reading
+     * STAT alone does not clear it -- STAT must be read and then DATA. The old
+     * loop tested RBNE only, so on an overrun it fell straight out of the
+     * handler with the flag still standing, the interrupt re-fired, and the
+     * CPU never returned to thread mode again: the main loop stopped, the ring
+     * stayed full, telemetry died. Seen for real at 921600 with the display
+     * streaming -- five of five PC samples inside this function.
+     *
+     * The STAT read in the loop condition plus the RDATA read below is exactly
+     * the clearing sequence, so handling both flags in one loop fixes it. */
+    uint32_t stat = USART1_STAT;
+
+    while (stat & (USART_RBNE | USART_ORE)) {
+        uint8_t b = (uint8_t)USART1_RDATA; /* clears RBNE, and ORE after STAT */
+
+        if (stat & USART_RBNE) {
+            uint16_t next = (uint16_t)((rx_head + 1) & (RX_RING_SIZE - 1));
+            if (next != rx_tail) {
+                rx_ring[rx_head] = b;
+                rx_head = next;
+            } else {
+                rx_overflows++; /* ring full: drop, keep newest reads flowing */
+            }
         } else {
-            rx_overflows++; /* ring full: drop, keep newest reads flowing */
+            rx_overflows++;     /* overrun: that byte is already gone */
         }
+
+        stat = USART1_STAT;
     }
 }
 

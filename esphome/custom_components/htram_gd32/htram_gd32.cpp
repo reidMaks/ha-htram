@@ -136,9 +136,22 @@ void HtramGd32Component::process_packet_(const uint8_t *data, size_t len) {
     last_batt_mv_ = data[9] | (data[10] << 8);
     last_status_ = data[11];
 
-    if (this->co2_sensor_ != nullptr && co2 != 0xFFFF) this->co2_sensor_->publish_state(co2);
-    if (this->temp_sensor_ != nullptr) this->temp_sensor_->publish_state(temp / 100.0f);
-    if (this->hum_sensor_ != nullptr) this->hum_sensor_->publish_state(hum / 100.0f);
+    // Nothing is published until the GD32 has a real reading. Its telemetry
+    // starts flowing immediately after a reset, before the first sensor window,
+    // and the packet carries zeros until then -- publishing those wrote 0.00 C
+    // and 0.00 %RH into Home Assistant's history on every restart. The flags to
+    // tell the two apart already exist in the protocol: SENSOR_ERR covers "no
+    // valid T/H yet, or the read failed", WARMUP covers the NDIR before it has
+    // a number. Skipping the publish keeps the last good value instead.
+    const bool sensor_err = (last_status_ & 0x08) != 0;  // STATUS_FLAG_SENSOR_ERR
+    const bool warmup = (last_status_ & 0x04) != 0;      // STATUS_FLAG_WARMUP
+
+    if (this->co2_sensor_ != nullptr && co2 != 0xFFFF && !warmup)
+      this->co2_sensor_->publish_state(co2);
+    if (this->temp_sensor_ != nullptr && !sensor_err)
+      this->temp_sensor_->publish_state(temp / 100.0f);
+    if (this->hum_sensor_ != nullptr && !sensor_err)
+      this->hum_sensor_->publish_state(hum / 100.0f);
     if (this->batt_sensor_ != nullptr) this->batt_sensor_->publish_state(last_batt_mv_);
     if (this->batt_level_sensor_ != nullptr)
       this->batt_level_sensor_->publish_state(batt_mv_to_pct(last_batt_mv_));
