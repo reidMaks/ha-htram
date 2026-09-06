@@ -41,9 +41,137 @@
     "slot": "#707880",
     "ring": "#131313",
     "ringfg": "#B9AFA3",
-    "warn": "#FF9E3D"
+    "warn": "#FF9E3D",
+    "caption": "#C2C8D0"
   },
   "variants": [
+    {
+      "id": "w-shipped",
+      "name": "W · Як зараз на пристрої",
+      "note": "Дзеркало прошивки: кільце 228, цифри 92 px, підпис Noto Sans 15 px у #C2C8D0, батарея намальована трьома прямокутниками (видима лише без USB), «!» під нею. 92 px — стеля, поки дата всередині кільця: рядок годин потребує 82 px півширини, а коло дає стільки лише від y=44 і нижче.",
+      "widgets": [
+        {
+          "type": "arc",
+          "align": "center",
+          "d": 228,
+          "width": 2,
+          "start": 270,
+          "end": 270,
+          "color": "$ringfg",
+          "opa": 0.3,
+          "track": "$ring",
+          "value": 1,
+          "rounded": false,
+          "cost": {
+            "w": 12,
+            "h": 12,
+            "note": "статичне кільце + крапка"
+          }
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": -46,
+          "y": 44,
+          "ink": true,
+          "font": 92,
+          "family": "dejavuobl",
+          "color": "$time",
+          "text": "{hh1}"
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": 14,
+          "y": 44,
+          "ink": true,
+          "font": 92,
+          "family": "dejavuobl",
+          "color": "$time",
+          "text": "{hh2}"
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": -14,
+          "y": 120,
+          "ink": true,
+          "font": 92,
+          "family": "dejavuobl",
+          "color": "$time",
+          "text": "{mm1}"
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": 46,
+          "y": 120,
+          "ink": true,
+          "font": 92,
+          "family": "dejavuobl",
+          "color": "$time",
+          "text": "{mm2}"
+        },
+        {
+          "type": "label",
+          "align": "bottom_mid",
+          "y": -25,
+          "font": 15,
+          "family": "noto",
+          "color": "$caption",
+          "cycle": [
+            "{date}",
+            "{out}° {wxword}",
+            "{temp}°  {hum}%"
+          ]
+        },
+        {
+          "type": "rect",
+          "align": "top_left",
+          "x": 166,
+          "y": 54,
+          "w": 22,
+          "h": 11,
+          "radius": 2,
+          "border": {
+            "w": 1,
+            "color": "$slot"
+          },
+          "when": "!usb"
+        },
+        {
+          "type": "rect",
+          "align": "top_left",
+          "x": 188,
+          "y": 57,
+          "w": 2,
+          "h": 5,
+          "color": "$slot",
+          "when": "!usb"
+        },
+        {
+          "type": "rect",
+          "align": "top_left",
+          "x": 168,
+          "y": 56,
+          "w": 5,
+          "h": 7,
+          "color": "$slot",
+          "when": "!usb"
+        },
+        {
+          "type": "label",
+          "align": "top_right",
+          "x": -64,
+          "y": 70,
+          "font": 15,
+          "family": "noto",
+          "color": "$warn",
+          "text": "!",
+          "when": "!link"
+        }
+      ]
+    },
     {
       "id": "f-stack",
       "name": "F · Стос (база, кільце в кольорі CO2)",
@@ -902,6 +1030,196 @@
           "y": 54,
           "size": 16,
           "color": "$battcolor",
+          "when": "link&&!usb"
+        }
+      ]
+    },
+    {
+      "id": "t-corners",
+      "name": "T · Кільце 228 + кути",
+      "note": "Кільце розширене до 228, цифри 94 px (7.4 мм проти 6.9), всередині лишились тільки час і дата. Значення переїхали в кути: ліворуч колонка температур (надворі зверху, всередині знизу), праворуч вологість і кишеня стану. Все видно одночасно — не треба чекати ротації.",
+      "widgets": [
+        {
+          "type": "arc",
+          "align": "center",
+          "d": 228,
+          "width": 2,
+          "start": 270,
+          "end": 270,
+          "color": "$ringfg",
+          "opa": 0.3,
+          "track": "$ring",
+          "value": 1,
+          "rounded": false,
+          "cost": {
+            "w": 12,
+            "h": 12,
+            "note": "статичне кільце + крапка"
+          }
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": -16,
+          "y": 50,
+          "ink": true,
+          "font": 94,
+          "family": "dejavuobl",
+          "color": "$time",
+          "text": "{hh}"
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": 16,
+          "y": 124,
+          "ink": true,
+          "font": 94,
+          "family": "dejavuobl",
+          "color": "$time",
+          "text": "{mm}"
+        },
+        {
+          "type": "label",
+          "align": "bottom_mid",
+          "y": -29,
+          "font": 15,
+          "family": "dejavulight",
+          "color": "$slot",
+          "text": "{date}"
+        },
+        {
+          "type": "label",
+          "align": "top_right",
+          "x": -8,
+          "y": 10,
+          "font": 15,
+          "family": "dejavulight",
+          "color": "$warn",
+          "text": "!",
+          "when": "!link"
+        },
+        {
+          "type": "label",
+          "align": "top_right",
+          "x": -8,
+          "y": 10,
+          "font": 15,
+          "family": "dejavulight",
+          "color": "$battcolor",
+          "text": "{batt_pct}%",
+          "when": "link&&!usb"
+        },
+        {
+          "type": "label",
+          "align": "top_left",
+          "x": 8,
+          "y": 10,
+          "font": 15,
+          "family": "dejavulight",
+          "color": "$slot",
+          "text": "{out}°"
+        },
+        {
+          "type": "label",
+          "align": "bottom_left",
+          "x": 8,
+          "y": -10,
+          "font": 15,
+          "family": "dejavulight",
+          "color": "$slot",
+          "text": "{temp0}°"
+        },
+        {
+          "type": "label",
+          "align": "bottom_right",
+          "x": -8,
+          "y": -10,
+          "font": 15,
+          "family": "dejavulight",
+          "color": "$slot",
+          "text": "{hum}%"
+        }
+      ]
+    },
+    {
+      "id": "u-bigring",
+      "name": "U · Кільце 228, кути тільки під стан",
+      "note": "Те саме розширене кільце і ті самі 94 px, але кути лишаються порожніми — там тільки те, що потребує уваги. Значення залишаються в підписі, який далі циклиться.",
+      "widgets": [
+        {
+          "type": "arc",
+          "align": "center",
+          "d": 228,
+          "width": 2,
+          "start": 270,
+          "end": 270,
+          "color": "$ringfg",
+          "opa": 0.3,
+          "track": "$ring",
+          "value": 1,
+          "rounded": false,
+          "cost": {
+            "w": 12,
+            "h": 12,
+            "note": "статичне кільце + крапка"
+          }
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": -16,
+          "y": 50,
+          "ink": true,
+          "font": 94,
+          "family": "dejavuobl",
+          "color": "$time",
+          "text": "{hh}"
+        },
+        {
+          "type": "label",
+          "align": "top_mid",
+          "x": 16,
+          "y": 124,
+          "ink": true,
+          "font": 94,
+          "family": "dejavuobl",
+          "color": "$time",
+          "text": "{mm}"
+        },
+        {
+          "type": "label",
+          "align": "bottom_mid",
+          "y": -29,
+          "font": 15,
+          "family": "dejavulight",
+          "color": "$slot",
+          "cycle": [
+            "{date}",
+            "{out}° {wxword}",
+            "{temp}°  {hum}%"
+          ]
+        },
+        {
+          "type": "label",
+          "align": "top_right",
+          "x": -8,
+          "y": 10,
+          "font": 15,
+          "family": "dejavulight",
+          "color": "$warn",
+          "text": "!",
+          "when": "!link"
+        },
+        {
+          "type": "label",
+          "align": "top_right",
+          "x": -8,
+          "y": 10,
+          "font": 15,
+          "family": "dejavulight",
+          "color": "$battcolor",
+          "text": "{batt_pct}%",
           "when": "link&&!usb"
         }
       ]

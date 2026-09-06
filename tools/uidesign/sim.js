@@ -13,9 +13,9 @@ const FONTS = {
   notodisplay: { asc: 1.069, line: 1.362, cap: 0.714, name: 'Noto Sans Display' },
   notomono: { asc: 1.069, line: 1.362, cap: 0.714, name: 'Noto Sans Mono' },
   notoserif: { asc: 1.069, line: 1.362, cap: 0.714, name: 'Noto Serif Display' },
-  dejavulight: { asc: 0.9282, line: 1.1641, cap: 0.6997, name: 'DejaVu Sans ExtraLight' },
-  dejavucond: { asc: 0.9282, line: 1.1641, cap: 0.6997, name: 'DejaVu Sans Condensed' },
-  dejavuobl: { asc: 0.9282, line: 1.1641, cap: 0.6997, name: 'DejaVu Sans ExtraLight Oblique' }
+  dejavulight: { asc: 0.9282, line: 1.1641, cap: 0.7002, name: 'DejaVu Sans ExtraLight' },
+  dejavucond: { asc: 0.9282, line: 1.1641, cap: 0.7002, name: 'DejaVu Sans Condensed' },
+  dejavuobl: { asc: 0.7422, line: 0.7568, cap: 0.7422, name: 'DejaVu Sans ExtraLight Oblique' }
 };
 const DEFAULT_FAMILY = 'noto';
 const fontOf = w => FONTS[w && w.family] || FONTS[DEFAULT_FAMILY];
@@ -105,6 +105,8 @@ function resolveText(t) {
   const map = {
     hh: tm.hh,
     mm: tm.mm,
+    hh1: tm.hh[0], hh2: tm.hh[1],
+    mm1: tm.mm[0], mm2: tm.mm[1],
     ss: String(state.seconds).padStart(2, '0'),
     out: state.outdoor.toFixed(0),
     wxword: { clear: 'надворі', rain: 'дощ', snow: 'сніг', wind: 'вітер' }[state.weather],
