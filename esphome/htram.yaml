@@ -7,6 +7,15 @@ substitutions:
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
+  # Several of these are going to live in the same house, and they are all
+  # flashed from this one config. The MAC suffix keeps their hostnames and
+  # entity ids apart without a per-device file. Drop this line to go back to a
+  # plain "htram".
+  name_add_mac_suffix: true
+  on_boot:
+    - text_sensor.template.publish:
+        id: device_id
+        state: !lambda "return esphome::get_mac_address().substr(6);"
 
 esp32:
   board: esp32dev
@@ -113,6 +122,14 @@ font:
     bpp: 4
     glyphs: "0123456789-"
 
+  # Sixteen glyphs, for the one thing that is read deliberately rather than
+  # glanced at: the device id, shown big enough to read across a desk.
+  - file: "fonts/NotoSans-Regular.ttf"
+    id: font_id
+    size: 44
+    bpp: 4
+    glyphs: "0123456789abcdef"
+
   # The caption line stays upright, and in a regular weight: measured at 15 px,
   # ExtraLight has a 1 px stem that never reaches full white (peak 240/255),
   # while Noto Sans gets 2 px at 255. Going bigger does not fix it -- ExtraLight
@@ -134,6 +151,10 @@ globals:
     type: int
     restore_value: false
     initial_value: "0"
+  - id: slot_hold
+    type: bool
+    restore_value: false
+    initial_value: "false"
   - id: led_auto
     type: bool
     restore_value: true
@@ -162,9 +183,40 @@ script:
           }
 
   # One caption line, three facts, rotating every 7 s.
+  # Which unit am I looking at? Triple-click and the caption says so for a few
+  # seconds, then goes back to its rotation. Nothing permanent is added to the
+  # face for something you need about twice a year.
+  - id: show_device_id
+    mode: restart
+    then:
+      - lambda: |-
+          /* Identifying a unit is a deliberate act, not a glance, so it takes
+             over the whole face rather than whispering from the caption line
+             at 1.7 mm. The clock comes back six seconds later. */
+          id(slot_hold) = true;
+          std::string s = esphome::get_mac_address().substr(6);
+          lv_label_set_text(id(ui_devid), s.c_str());
+          lv_obj_t *const hide[] = {id(ui_h1), id(ui_h2), id(ui_m1), id(ui_m2),
+                                    id(ui_slot), id(ui_pocket)};
+          for (auto *o : hide) lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+          lv_obj_remove_flag(id(ui_devid), LV_OBJ_FLAG_HIDDEN);
+          lv_obj_remove_flag(id(ui_devid_cap), LV_OBJ_FLAG_HIDDEN);
+      - delay: 6s
+      - lambda: |-
+          lv_obj_add_flag(id(ui_devid), LV_OBJ_FLAG_HIDDEN);
+          lv_obj_add_flag(id(ui_devid_cap), LV_OBJ_FLAG_HIDDEN);
+          lv_obj_t *const show[] = {id(ui_h1), id(ui_h2), id(ui_m1), id(ui_m2),
+                                    id(ui_slot), id(ui_pocket)};
+          for (auto *o : show) lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+          id(slot_hold) = false;
+      - script.execute: refresh_clock
+      - script.execute: refresh_slot
+      - script.execute: refresh_pocket
+
   - id: refresh_slot
     then:
       - lambda: |-
+          if (id(slot_hold)) return;
           char buf[48];
           switch (id(slot_idx)) {
             case 0: {
@@ -392,6 +444,24 @@ lvgl:
               text: "-"
 
           - label:
+              id: ui_devid
+              align: center
+              y: 4
+              text_font: font_id
+              text_color: 0xF0EAE0
+              text: ""
+              hidden: true
+
+          - label:
+              id: ui_devid_cap
+              align: center
+              y: -34
+              text_font: font_slot
+              text_color: 0x707880
+              text: "ID"
+              hidden: true
+
+          - label:
               id: ui_slot
               align: bottom_mid
               y: -25
@@ -511,6 +581,11 @@ binary_sensor:
 text_sensor:
   - platform: version
     name: "ESPHome Version"
+  - platform: template
+    id: device_id
+    name: "Device ID"
+    icon: "mdi:identifier"
+    entity_category: diagnostic
   - platform: homeassistant
     id: outdoor_cond
     entity_id: ${weather_entity}
@@ -522,22 +597,27 @@ text_sensor:
       entity_category: diagnostic
     button_action:
       name: "Button Action"
+      on_value:
+        - if:
+            condition:
+              lambda: return x == "triple";
+            then:
+              - script.execute: show_device_id
 
 button:
+  - platform: template
+    name: "Show Device ID"
+    icon: "mdi:identifier"
+    entity_category: diagnostic
+    on_press:
+      - script.execute: show_device_id
+
   - platform: template
     name: "Beep"
     icon: "mdi:volume-high"
     on_press:
       - lambda: |-
           id(htram_core)->send_beep(2000, 200);
-
-  - platform: template
-    name: "Enter GD32 Bootloader"
-    icon: "mdi:cellphone-arrow-down"
-    entity_category: diagnostic
-    on_press:
-      - lambda: |-
-          id(htram_core)->send_enter_bootloader();
 
 number:
   - platform: template
