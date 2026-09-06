@@ -24,6 +24,23 @@
 
 #define LCD_SCK_PULSE() do { LCD_SCK_LOW(); LCD_SCK_HIGH(); } while (0)
 
+/*
+ * Orientation. The panel is mounted upside down in the case, so the frame has
+ * to be turned 180 degrees. Doing it here in MADCTL (MY|MX) rather than in
+ * LVGL on the ESP means the GD32's own drawing -- the boot screen and the
+ * standby charge indicator -- comes out the right way up too, and the ESP
+ * stops paying for a software rotation of every flushed rectangle.
+ *
+ * MY reverses the row counter, so a 240x240 panel bonded to the top of the
+ * controller's 320-row RAM moves to the far end of it and every row address
+ * needs LCD_ROW_OFFSET added. 80 = 320 - 240. If the panel turns out to be a
+ * true 240x240 controller the offset is 0 and the picture is simply shifted;
+ * that is the one thing to look at on the first flash.
+ */
+#define LCD_MADCTL      0xC0    /* MY | MX -- 180 degrees, RGB order */
+#define LCD_COL_OFFSET  0
+#define LCD_ROW_OFFSET  80
+
 static void lcd_send_cmd(uint8_t cmd)
 {
     LCD_CS_LOW();
@@ -116,6 +133,9 @@ void display_set_window(uint8_t x, uint8_t y, uint8_t w, uint8_t h)
 
     if (x1 > 239) x1 = 239;
     if (y1 > 239) y1 = 239;
+
+    x0 += LCD_COL_OFFSET; x1 += LCD_COL_OFFSET;
+    y0 += LCD_ROW_OFFSET; y1 += LCD_ROW_OFFSET;
 
     lcd_send_cmd(0x2A); /* CASET */
     lcd_send_data((uint8_t)(x0 >> 8));
@@ -232,8 +252,8 @@ void display_init(void)
     lcd_send_cmd(0x35); /* TEON */
     lcd_send_data(0x00);
 
-    lcd_send_cmd(0x36); /* MADCTL (Default orientation RGB) */
-    lcd_send_data(0x00);
+    lcd_send_cmd(0x36); /* MADCTL -- see LCD_MADCTL above */
+    lcd_send_data(LCD_MADCTL);
 
     lcd_send_cmd(0x3A); /* COLMOD (16-bit RGB565) */
     lcd_send_data(0x05);

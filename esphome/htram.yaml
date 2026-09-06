@@ -347,7 +347,10 @@ time:
 lvgl:
   displays:
     - htram_display
-  rotation: 180
+  # No `rotation:` here on purpose -- the 180 degree turn now lives in the
+  # ST7789's MADCTL register on the GD32 (LCD_MADCTL in display.c), so the
+  # GD32's own boot and standby screens come out upright as well and LVGL
+  # stops rotating every flushed rectangle in software.
   buffer_size: 12.5%
   byte_order: big_endian
   bg_color: 0x000000
