@@ -42,6 +42,11 @@ uint8_t protocol_is_external_display_active(void)
     return g_external_display_active;
 }
 
+void protocol_set_external_display(uint8_t active)
+{
+    g_external_display_active = active ? 1 : 0;
+}
+
 void USART1_IRQHandler(void)
 {
     while (USART1_STAT & USART_RBNE) {
@@ -282,6 +287,9 @@ void protocol_process_rx(void)
                     bytes_left = (uint16_t)cmd_buf[4] | ((uint16_t)cmd_buf[5] << 8);
 
                     if (rect_w > 0 && rect_h > 0 && bytes_left > 0) {
+#ifdef DIAG_MINIMAL
+                        break; /* panel pins are released in this build */
+#endif
                         g_external_display_active = 1;
                         display_start_pixels(rect_x, rect_y, rect_w, rect_h);
                         pixel_phase = 0;

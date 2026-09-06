@@ -12,5 +12,7 @@ void protocol_send_button_event(uint8_t state, uint16_t duration_ms);
 void protocol_send_flow(uint8_t resume);
 void protocol_process_rx(void);
 uint8_t protocol_is_external_display_active(void);
+/* Hand the panel back to local rendering (standby) or to the ESP. */
+void protocol_set_external_display(uint8_t active);
 
 #endif /* PROTOCOL_ENGINE_H */
