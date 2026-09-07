@@ -98,6 +98,30 @@ wifi:
 
 captive_portal:
 
+# BLE (2026-09-06). Перевірено на живому пристрої: 0 зривів LVGL, телеметрія
+# в нормі, ~70 КБ вільної купи. Активне сканування — щоб HA бачив імена, а не
+# самі адреси.
+esp32_ble_tracker:
+  scan_parameters:
+    active: true
+
+# Проксі, але тільки як вуха: пересилає рекламу в Home Assistant і не дозволяє
+# йому підключатись до пристроїв через нас. Підключення — це слот пам'яті на
+# кожне, а купа тут і так найдефіцитніший ресурс; реклами ж достатньо для
+# всього, заради чого це робилось (присутність, iBeacon, BTHome-датчики).
+#
+# Сенс саме в проксі, а не в ble_presence на пристрої: розпізнавання живе в HA,
+# тож новий телефон чи новий спосіб трекінгу — це правка в HA, а не збірка й
+# перепрошивка. Випадкових MAC воно, втім, не скасовує: телефон і годинник
+# крутять адресу, і для них усе одно потрібен IRK (private_ble_device) або
+# маяк iBeacon із застосунку-компаньйона.
+bluetooth_proxy:
+  active: false
+
+# Скільки пам'яті лишається під навантаженням, і чому саме перезавантажився.
+debug:
+  update_interval: 30s
+
 web_server:
   port: 80
   # Reachable from the whole LAN, and from anyone on the fallback AP. Digest
@@ -814,6 +838,14 @@ lvgl:
               hidden: true
 
 sensor:
+  - platform: debug
+    free:
+      name: "Free heap"
+    block:
+      name: "Largest free block"
+    loop_time:
+      name: "Loop time"
+
   - platform: wifi_signal
     name: "WiFi RSSI"
     update_interval: 30s
@@ -869,6 +901,12 @@ binary_sensor:
       id: htram_button
 
 text_sensor:
+  - platform: debug
+    device:
+      name: "Device info"
+    reset_reason:
+      name: "Reset reason"
+
   - platform: wifi_info
     ip_address:
       id: wifi_ip
