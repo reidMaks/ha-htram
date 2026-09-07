@@ -1,15 +1,17 @@
 {
   "domain": "htram",
   "name": "Honeywell Transmission Risk Air Monitor (HTRAM)",
+  "version": "1.0.0",
+  "documentation": "https://github.com/reidMaks/ha-htram",
+  "issue_tracker": "https://github.com/reidMaks/ha-htram/issues",
   "codeowners": [],
   "config_flow": true,
+  "iot_class": "local_push",
   "dependencies": [
     "bluetooth"
   ],
-  "iot_class": "local_push",
-  "requirements": [],
-  "version": "1.0.0",
   "after_dependencies": [
     "mqtt"
-  ]
+  ],
+  "requirements": []
 }

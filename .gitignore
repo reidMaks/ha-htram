@@ -14,7 +14,6 @@ sources/
 resources/
 dist/
 build/
-firmware/gd32/build/
 *.apk
 *.zip
 scan_and_decompile.py
@@ -29,34 +28,23 @@ analysis_output.txt
 Thumbs.db
 
 # Hardware session artifacts. Never commit these:
-# a 4 MB flash image, the broker's self-signed cert and its PRIVATE KEY,
+# the ESP32's 4 MB stock flash image, the broker's self-signed cert and its
+# PRIVATE KEY,
 # raw UART/MQTT capture logs, and the downlink publish queue.
 esp32-dump.bin
-gd32_flash.bin
-tools/swd/*.bin
-tools/swd/*.elf
 *.pdf
 *.pem
 *.log
 outbox.txt
 
-# Референсне фото заводського екрана для пісочниці дизайну. Продуктове
-# зображення виробника не наше, тож кожен кладе сюди власне фото.
-tools/uidesign/reference.webp
-
 # файл паролів mosquitto, якщо його згенерували в корені репозиторію
 passwd
 
+# Кеш збірки ESPHome, який лишився в робочій теці від часів, коли прошивка
+# жила тут. Сама прошивка переїхала в htram-esphome; каталог не чіпаємо,
+# але й у репозиторій він не потрапляє.
+.esphome/
+
 # оточення для перевірки проти актуального HA (потребує Python 3.14)
 .venv-ha/
-esphome/secrets.yaml
-.esphome/
-esphome/.esphome/
 scratch/
-
-# Вихідні знімки знаків загроз, з яких обведено силуети. Це кастомний
-# емодзі-пак каналу Повітряних Сил — чужа графіка, і репозиторій її не
-# розповсюджує (див. README, розділ про сторонні матеріали). Обведені SVG
-# лежать поруч і комітяться; щоб перегенерувати їх, покладіть сюди свої
-# знімки й прожніть tools/images/trace_mask.py.
-esphome/images/src/
