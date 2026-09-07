@@ -203,9 +203,27 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+/* `angle` in degrees, clockwise, about the widget's own centre.
+   On the device only an image can carry this: ESPHome's LVGL `image` widget
+   takes `angle`, a rect does not. So anything tilted here has to ship as a
+   1-bit mask — the same pipeline as the emblem, ~2 KB apiece. */
+function rotate(ctx, wdg, x, y, w, h) {
+  if (!wdg.angle) return false;
+  // `about: [x, y]` spins several widgets around one shared point, which is how
+  // a battery keeps its body, fill and nub together. On the device the three
+  // are one image anyway, so this only has to be true of the sketch.
+  const [cx, cy] = wdg.about || [x + w / 2, y + h / 2];
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(wdg.angle * Math.PI / 180);
+  ctx.translate(-cx, -cy);
+  return true;
+}
+
 function drawRect(ctx, wdg) {
   const w = wdg.w, h = wdg.h;
   const [x, y] = place(wdg.align, w, h, wdg.x || 0, wdg.y || 0);
+  const spun = rotate(ctx, wdg, x, y, w, h);
   ctx.globalAlpha = wdg.opa ?? 1;
   if (wdg.color) { ctx.fillStyle = resolveColor(wdg.color); roundRect(ctx, x, y, w, h, wdg.radius); ctx.fill(); }
   if (wdg.border) {
@@ -215,6 +233,7 @@ function drawRect(ctx, wdg) {
     ctx.stroke();
   }
   ctx.globalAlpha = 1;
+  if (spun) ctx.restore();
   return [x, y, w, h];
 }
 
@@ -299,7 +318,13 @@ function drawIcon(ctx, wdg) {
   const [x, y] = place(wdg.align, s, s, wdg.x || 0, wdg.y || 0);
   const c = resolveColor(wdg.color || '$dim');
   ctx.save();
-  ctx.translate(x, y);
+  if (wdg.angle) {
+    ctx.translate(x + s / 2, y + s / 2);
+    ctx.rotate(wdg.angle * Math.PI / 180);
+    ctx.translate(-s / 2, -s / 2);
+  } else {
+    ctx.translate(x, y);
+  }
   ctx.fillStyle = ctx.strokeStyle = c;
   ctx.lineWidth = Math.max(1, s / 10);
   ctx.lineCap = 'round';
