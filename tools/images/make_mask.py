@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turn the coat-of-arms SVG into the 1-bit mask the firmware embeds.
+"""Turn an SVG into the 1-bit mask the firmware embeds.
 
 ESPHome hands a `type: BINARY` image to LVGL as LV_COLOR_FORMAT_A1 — a
 silhouette with no colour of its own, tinted at runtime by image_recolor. That
@@ -16,7 +16,7 @@ Two details this script exists to record, because both cost an attempt:
     image is alpha-only, so the mask is written as plain greyscale: emblem
     white, everything else black.
 
-    .venv/bin/python tools/images/make_tryzub_mask.py \
+    .venv/bin/python tools/images/make_mask.py \
         esphome/images/Lesser_Coat_of_Arms_of_Ukraine_(bw).svg \
         esphome/images/tryzub_mask.png --height 150
 """
