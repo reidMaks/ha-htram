@@ -51,6 +51,15 @@ substitutions:
   friendly_name: HTRAM
   # Home Assistant weather entity the outdoor slot reads from.
   weather_entity: weather.forecast_home
+  # Сутність повітряної тривоги в Home Assistant. Поки це `ukraine_alarm` із
+  # ядра — сам факт тривоги, без типу загрози. Тип (дрон/ракета/КАБ) є лише в
+  # даних JAAM і в HA штатно не потрапляє; коли з'явиться — сюди додасться
+  # друга сутність, яка обиратиме гліф у слоті.
+  alert_entity: binary_sensor.air_raid_alert
+  # Скільки хвилин після початку тривоги й після відбою цифри годинника
+  # тримають колір. Тривога триває годинами, і постійно червоний годинник за
+  # півгодини перестає бути інформацією — кольором позначається ПОДІЯ.
+  alert_mark_minutes: "5"
 
 esphome:
   name: ${name}
@@ -203,6 +212,12 @@ display:
     update_interval: never
 
 image:
+  # Знак тривоги: заливний трикутник. Проста геометрична форма, як у каналі
+  # Повітряних Сил, — саме такі виживають на 4.5 мм, на відміну від силуетів.
+  - file: "images/alert_mask.png"
+    id: img_alert
+    type: BINARY
+
   # Дзвінок для слота: заливний, а не контурний — на 4.5 мм штрих у 0.45 мм не
   # виживає, суцільна форма виживає. 150 Б у вигляді однобітної маски.
   - file: "images/bell_mask.png"
@@ -309,6 +324,19 @@ globals:
   # поки нема чого міняти, і не інвалідує дугу дарма. Це надійніше, ніж ловити
   # правильний тригер: turn_on_action шаблонного вмикача виконується ДО того,
   # як стан стане true, тож перший підхід малював засічку за старим станом.
+  # Тривога: сам стан і мітка часу, доки цифри тримають колір події.
+  - id: alert_active
+    type: bool
+    restore_value: false
+    initial_value: "false"
+  - id: alert_mark_until
+    type: int
+    restore_value: false
+    initial_value: "0"
+  - id: alert_mark_color
+    type: int
+    restore_value: false
+    initial_value: "0"
   - id: alarm_snoozing
     type: bool
     restore_value: false
@@ -583,8 +611,8 @@ script:
       - lambda: |-
           const bool armed = id(alarm_enabled).state;
           const int sig = (armed ? 1 : 0) | (id(alarm_ringing) ? 2 : 0) |
-                          (id(alarm_snoozing) ? 4 : 0) |
-                          ((id(alarm_time).hour * 60 + id(alarm_time).minute) << 3);
+                          (id(alarm_snoozing) ? 4 : 0) | (id(alert_active) ? 8 : 0) |
+                          ((id(alarm_time).hour * 60 + id(alarm_time).minute) << 4);
           if (sig == id(alarm_ui_sig)) return;
           id(alarm_ui_sig) = sig;
 
@@ -604,6 +632,14 @@ script:
           } else {
             lv_obj_add_flag(id(ui_alarm_tick), LV_OBJ_FLAG_HIDDEN);
           }
+          // Слот один, претендентів двоє. Тривога вища за будильник: якщо
+          // повітряна тривога триває, дзвінок поступається місцем.
+          const bool alert = id(alert_active);
+          if (alert)
+            lv_obj_remove_flag(id(ui_alert), LV_OBJ_FLAG_HIDDEN);
+          else
+            lv_obj_add_flag(id(ui_alert), LV_OBJ_FLAG_HIDDEN);
+
           // Дзвінок лишається на екрані весь епізод, а не лише поки лунає:
           // відкладений будильник — це не «нічого не відбувається», він
           // повернеться. Фазу каже колір, бо форма вже зайнята змістом.
@@ -612,7 +648,7 @@ script:
           //   нічого     — вимкнено або скасовано.
           // Маска — це A1, силует без власного кольору: без image_recolor
           // LVGL малює його нічим, тобто чорним по чорному.
-          if (id(alarm_ringing) || id(alarm_snoozing)) {
+          if (!alert && (id(alarm_ringing) || id(alarm_snoozing))) {
             lv_obj_set_style_image_recolor(
                 id(ui_bell),
                 lv_color_hex(id(alarm_ringing) ? 0xFF9E3D : 0x707880),
@@ -670,6 +706,26 @@ script:
             - script.execute: alarm_ring
           else:
             - script.execute: refresh_alarm_ui
+
+  # Колір цифр позначає ПОДІЮ, а не стан: спалахує на кілька хвилин на початку
+  # тривоги і ще раз після відбою, потім повертається. Тривога триває годинами,
+  # і годинник, що весь цей час червоний, перестає щось повідомляти. Те, що
+  # триває, несе піктограма в слоті.
+  - id: refresh_alert_marks
+    then:
+      - lambda: |-
+          auto now = id(ha_time).now();
+          if (!now.is_valid()) return;
+          const uint32_t t = now.timestamp;
+          const bool marked = t < (uint32_t) id(alert_mark_until);
+          const uint32_t want = marked ? (uint32_t) id(alert_mark_color) : 0xF0EAE0;
+
+          static uint32_t shown = 0xF0EAE0;
+          if (want == shown) return;
+          shown = want;
+          lv_obj_t *const d[4] = {id(ui_h1), id(ui_h2), id(ui_m1), id(ui_m2)};
+          for (auto *o : d)
+            lv_obj_set_style_text_color(o, lv_color_hex(want), LV_PART_MAIN);
 
   - id: refresh_slot
     then:
@@ -838,6 +894,7 @@ interval:
                 if (id(ha_link)) { id(ha_link) = false; id(refresh_pocket).execute(); }
       - script.execute: refresh_face
       - script.execute: refresh_alarm_ui
+      - script.execute: refresh_alert_marks
 
 time:
   - platform: homeassistant
@@ -1049,6 +1106,14 @@ lvgl:
 
           # Дзвінок з'являється лише поки будильник дзвонить: заведений показує
           # тільки засічку. Слот 40×40 з центром (194, 94).
+          # Той самий слот, що й дзвінок: тривога має пріоритет над будильником.
+          - image:
+              id: ui_alert
+              x: 177
+              y: 74
+              src: img_alert
+              hidden: true
+
           - image:
               id: ui_bell
               x: 179
@@ -1214,6 +1279,27 @@ sensor:
         - script.execute: refresh_pocket
 
 binary_sensor:
+  # Джерело — Home Assistant. Поки це `ukraine_alarm` із ядра: сам факт тривоги
+  # по вашому регіону, без типу загрози.
+  - platform: homeassistant
+    id: alert_raw
+    entity_id: ${alert_entity}
+    internal: true
+    on_state:
+      - lambda: |-
+          const bool on = x;
+          if (on == id(alert_active)) return;
+          id(alert_active) = on;
+          auto now = id(ha_time).now();
+          if (now.is_valid()) {
+            id(alert_mark_until) = now.timestamp + ${alert_mark_minutes} * 60;
+            // червоне — почалось, зелене — відбій. Один канал, дві події,
+            // і сплутати їх неможливо.
+            id(alert_mark_color) = on ? 0xE5484D : 0x3DD68C;
+          }
+      - script.execute: refresh_alert_marks
+      - script.execute: refresh_alarm_ui
+
   - platform: htram_gd32
     usb:
       name: "USB Power"

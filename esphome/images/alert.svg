@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Знак тривоги для слота 40x40. Заливний трикутник із вирізаним знаком
+     оклику: суцільна форма читається на 4.5 мм, контурна — ні. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <path d="M50 6 L98 92 L2 92 Z" fill="#000000"/>
+  <rect x="44" y="36" width="12" height="30" rx="5" fill="#ffffff"/>
+  <circle cx="50" cy="78" r="7" fill="#ffffff"/>
+</svg>
