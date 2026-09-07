@@ -11,6 +11,27 @@ substitutions:
   # проявляє квадрат посеред кола. Чорний зливається з рамкою, і видно лише те,
   # що світиться, — на цьому побудоване все обличчя. Червоне на чорному ще й
   # точніше за регістром: це колір скорботи, а не державності.
+  # Будильник: класичний двотоновий вереск, а не мелодія. Швидке чергування
+  # двох близьких високих нот — те, чим верещать пожежні й годинникові
+  # будильники, бо до нього неможливо звикнути й неможливо доспати.
+  #
+  # Обидві ноти тримаються біля 2304 Гц — це резонанс динаміка LS1, записаний
+  # у periph.c, і саме тому писк кнопки на 2304 чути добре. Перша спроба брала
+  # c7 (2093) і f7 (2793), тобто повз резонанс з обох боків, і виходило тихо:
+  # шпаруватість тут ні до чого, вона й так рівно 50 %.
+  # c#7 = 2217 Гц (−4 % від резонансу), d#7 = 2489 Гц (+8 %).
+  #
+  # 32-мі при b=200 — це 37 мс на ноту: досить коротко, щоб чергування читалось
+  # як сирена, а не як дві окремі ноти.
+  #
+  # Якщо треба ще гучніше — одноголосий пульс рівно на резонансі:
+  #   "Alarm:d=32,o=7,b=200:d,p,d,p,d,p,d,p,8p,d,p,d,p,d,p,d,p"
+  # (d7 = 2349 Гц, +2 % від резонансу) — це вже максимум, що ця котушка вміє.
+  alarm_rtttl: "Alarm:d=32,o=7,b=200:c#,d#,c#,d#,c#,d#,c#,d#,8p,c#,d#,c#,d#,c#,d#,c#,d#,8p,c#,d#,c#,d#,c#,d#,c#,d#"
+  # Мелодія триває ~1.5 с; тривати має майже безперервно, інакше це не
+  # будильник, а нагадування.
+  alarm_repeat_seconds: "3"
+  alarm_snooze_minutes: "9"
   silence_bg: "0x000000"
   silence_fg: "0xC1121F"
   silence_tick_seconds: "2"
@@ -41,6 +62,7 @@ esphome:
       then:
         - script.execute: refresh_leds
         - script.execute: refresh_face
+        - script.execute: refresh_alarm_ui
 
 esp32:
   board: esp32dev
@@ -171,6 +193,12 @@ display:
     update_interval: never
 
 image:
+  # Дзвінок для слота: заливний, а не контурний — на 4.5 мм штрих у 0.45 мм не
+  # виживає, суцільна форма виживає. 150 Б у вигляді однобітної маски.
+  - file: "images/bell_mask.png"
+    id: img_bell
+    type: BINARY
+
   # Малий Державний Герб. Джерело — SVG користувача, з якого взято сам знак
   # (у файлі він темний на світлому полі щита) і збережено як однобітну маску:
   # у LVGL вона стає LV_COLOR_FORMAT_A1, тобто силуетом без власного кольору.
@@ -262,6 +290,23 @@ globals:
   # метроном на цей час мусить замовкнути. CMD_BEEP на GD32 не додає ноту в
   # чергу, а заміщає її (`mel_count = 1`), тож один тік обриває мелодію —
   # рівно це й сталось на першій перевірці.
+  - id: alarm_ringing
+    type: bool
+    restore_value: false
+    initial_value: "false"
+  # Підпис уже намальованого стану будильника: зведений + дзвонить + час.
+  # Завдяки йому refresh_alarm_ui можна кликати хоч щосекунди — він мовчить,
+  # поки нема чого міняти, і не інвалідує дугу дарма. Це надійніше, ніж ловити
+  # правильний тригер: turn_on_action шаблонного вмикача виконується ДО того,
+  # як стан стане true, тож перший підхід малював засічку за старим станом.
+  - id: alarm_snoozing
+    type: bool
+    restore_value: false
+    initial_value: "false"
+  - id: alarm_ui_sig
+    type: int
+    restore_value: false
+    initial_value: "-1"
   - id: silence_ticking
     type: bool
     restore_value: false
@@ -373,6 +418,15 @@ script:
           lv_obj_t *const msg[] = {id(ui_msg_cap), id(ui_msg), id(ui_msg_sub),
                                    id(ui_msg2), id(ui_ap_card), id(ui_ap_qr)};
           for (auto *o : msg) lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+
+          // Засічка і дзвінок живуть на циферблаті, а не окремим обличчям:
+          // коли будильник дзвонить, час — це найперше, що хочеться бачити.
+          if (want != 0) {
+            lv_obj_add_flag(id(ui_alarm_tick), LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(id(ui_bell), LV_OBJ_FLAG_HIDDEN);
+          } else {
+            id(refresh_alarm_ui).execute();
+          }
 
           // The blue only exists during the minute; everything else is drawn on
           // black, so this is set and unset here rather than per widget.
@@ -511,6 +565,101 @@ script:
       - script.execute: refresh_slot
       - script.execute: refresh_pocket
       - script.execute: refresh_leds
+
+  # Засічка стоїть під кутом години будильника на 12-годинному колі, дзвінок
+  # з'являється лише поки він дзвонить.
+  - id: refresh_alarm_ui
+    then:
+      - lambda: |-
+          const bool armed = id(alarm_enabled).state;
+          const int sig = (armed ? 1 : 0) | (id(alarm_ringing) ? 2 : 0) |
+                          (id(alarm_snoozing) ? 4 : 0) |
+                          ((id(alarm_time).hour * 60 + id(alarm_time).minute) << 3);
+          if (sig == id(alarm_ui_sig)) return;
+          id(alarm_ui_sig) = sig;
+
+          if (armed) {
+            // 12-годинне коло; LVGL рахує кути від 3-ї години, тож −90.
+            const float dial = ((id(alarm_time).hour % 12) +
+                                id(alarm_time).minute / 60.0f) * 30.0f;
+            const float lv = dial - 90.0f;
+            // %% у C лишає від'ємне від'ємним: о 12:25 кут виходить −77.5°,
+            // LVGL отримував −79 замість 281 і малював повне коло.
+            auto norm = [](float deg) {
+              int32_t d = (int32_t) lroundf(deg) % 360;
+              return d < 0 ? d + 360 : d;
+            };
+            lv_arc_set_bg_angles(id(ui_alarm_tick), norm(lv - 1.6f), norm(lv + 1.6f));
+            lv_obj_remove_flag(id(ui_alarm_tick), LV_OBJ_FLAG_HIDDEN);
+          } else {
+            lv_obj_add_flag(id(ui_alarm_tick), LV_OBJ_FLAG_HIDDEN);
+          }
+          // Дзвінок лишається на екрані весь епізод, а не лише поки лунає:
+          // відкладений будильник — це не «нічого не відбувається», він
+          // повернеться. Фазу каже колір, бо форма вже зайнята змістом.
+          //   бурштиновий — дзвонить зараз, той самий колір, що й засічка;
+          //   тьмяний    — відкладено, повернеться;
+          //   нічого     — вимкнено або скасовано.
+          // Маска — це A1, силует без власного кольору: без image_recolor
+          // LVGL малює його нічим, тобто чорним по чорному.
+          if (id(alarm_ringing) || id(alarm_snoozing)) {
+            lv_obj_set_style_image_recolor(
+                id(ui_bell),
+                lv_color_hex(id(alarm_ringing) ? 0xFF9E3D : 0x707880),
+                LV_PART_MAIN);
+            lv_obj_set_style_image_recolor_opa(id(ui_bell), LV_OPA_COVER,
+                                               LV_PART_MAIN);
+            lv_obj_remove_flag(id(ui_bell), LV_OBJ_FLAG_HIDDEN);
+          } else {
+            lv_obj_add_flag(id(ui_bell), LV_OBJ_FLAG_HIDDEN);
+          }
+
+  - id: alarm_ring
+    mode: single
+    then:
+      - lambda: |-
+          id(alarm_ringing) = true;
+          id(face_state) = -1;
+      - script.execute: refresh_face
+      # 100 × 3 с ≈ п'ять хвилин: будильник, що надривається в порожній
+      # кімнаті годину, — це не наполегливість, а несправність.
+      - repeat:
+          count: 100
+          then:
+            - lambda: id(htram_core)->play_rtttl("${alarm_rtttl}");
+            - delay: ${alarm_repeat_seconds}s
+      - script.execute: alarm_dismiss
+
+  # Замовкнути, але лишити епізод відкритим: цим користується і відкладення.
+  - id: alarm_stop
+    then:
+      - script.stop: alarm_ring
+      - lambda: |-
+          id(htram_core)->send_stop();
+          id(alarm_ringing) = false;
+      - script.execute: refresh_alarm_ui
+
+  # Скасувати остаточно: глушить, знімає відкладення і прибирає піктограму.
+  - id: alarm_dismiss
+    then:
+      - script.stop: alarm_snooze
+      - lambda: id(alarm_snoozing) = false;
+      - script.execute: alarm_stop
+
+  - id: alarm_snooze
+    mode: restart
+    then:
+      - lambda: id(alarm_snoozing) = true;
+      - script.execute: alarm_stop
+      - delay: ${alarm_snooze_minutes}min
+      - lambda: id(alarm_snoozing) = false;
+      - if:
+          condition:
+            switch.is_on: alarm_enabled
+          then:
+            - script.execute: alarm_ring
+          else:
+            - script.execute: refresh_alarm_ui
 
   - id: refresh_slot
     then:
@@ -678,6 +827,7 @@ interval:
             - lambda: |-
                 if (id(ha_link)) { id(ha_link) = false; id(refresh_pocket).execute(); }
       - script.execute: refresh_face
+      - script.execute: refresh_alarm_ui
 
 time:
   - platform: homeassistant
@@ -866,6 +1016,36 @@ lvgl:
           # network name and its password. Positions are set at runtime by
           # refresh_face, since a two-line face and a four-line face cannot
           # share one set of offsets.
+          # Засічка «зведено». Дуга 240 при кільці 228: смуга лягає від радіуса
+          # 112 до краю скла, тобто перетинає кільце й виходить назовні. Кут
+          # задається в рантаймі з часу будильника.
+          - arc:
+              id: ui_alarm_tick
+              align: center
+              width: 236
+              height: 236
+              arc_width: 12
+              arc_color: 0xFF9E3D
+              arc_rounded: false
+              start_angle: 133
+              end_angle: 137
+              adjustable: false
+              value: 0
+              hidden: true
+              indicator:
+                arc_opa: TRANSP
+              knob:
+                bg_opa: TRANSP
+
+          # Дзвінок з'являється лише поки будильник дзвонить: заведений показує
+          # тільки засічку. Слот 40×40 з центром (194, 94).
+          - image:
+              id: ui_bell
+              x: 179
+              y: 74
+              src: img_bell
+              hidden: true
+
           - image:
               id: ui_tryzub
               align: center
@@ -918,19 +1098,23 @@ lvgl:
 
           - label:
               id: ui_pocket
-              align: top_right
-              x: -64
-              y: 70
+              align: top_left
+              x: 16
+              y: 12
               text_font: font_slot
               text_color: 0xFF9E3D
               text: ""
 
           # Battery, drawn rather than written. Sits in the pocket the stagger
           # of the hours leaves free, and stays hidden while on USB.
+          # Кути по діагоналі, ПОЗА кільцем (137 px від центру проти радіуса
+          # 114): там нічого немає, а кишеня після ряду годин потрібна слоту
+          # піктограми. На панелі ці два індикатори й так ледь помітні, тож кут
+          # їм не шкодить.
           - obj:
               id: ui_batt_body
-              x: 166
-              y: 54
+              x: 204
+              y: 19
               width: 22
               height: 11
               radius: 2
@@ -943,8 +1127,8 @@ lvgl:
               hidden: true
           - obj:
               id: ui_batt_nub
-              x: 188
-              y: 57
+              x: 226
+              y: 22
               width: 2
               height: 5
               radius: 0
@@ -957,8 +1141,8 @@ lvgl:
               hidden: true
           - obj:
               id: ui_batt_fill
-              x: 168
-              y: 56
+              x: 206
+              y: 21
               width: 12
               height: 7
               radius: 0
@@ -1068,6 +1252,26 @@ text_sensor:
     button_action:
       name: "Button Action"
       on_value:
+        # Поки триває епізод будильника, кнопка належить йому: коротко —
+        # відкласти, двічі — скасувати. Це має стояти перед рештою жестів,
+        # інакше о сьомій ранку спросоння можна показати собі IP-адресу.
+        #
+        # Утримання тут свідомо НЕ використовується. `long` на боці ESP — це
+        # 0.6–2.8 с, а GD32 на 3 секундах самостійно йде в standby і згоди ESP
+        # не питає. Тобто будь-яке «довге натискання» межує з вимкненням
+        # пристрою, і спросоння в цю межу не влучають: перша ж спроба вимкнути
+        # дзвінок вимкнула весь пристрій.
+        - if:
+            condition:
+              lambda: return (id(alarm_ringing) || id(alarm_snoozing)) && x == "single";
+            then:
+              - script.execute: alarm_snooze
+        - if:
+            condition:
+              lambda: return (id(alarm_ringing) || id(alarm_snoozing)) && x == "double";
+            then:
+              - script.execute: alarm_dismiss
+
         # On the AP face a single click turns the page, and stops the rotation
         # so the credentials stay put for as long as it takes to type them.
         - if:
@@ -1081,12 +1285,12 @@ text_sensor:
               - script.execute: refresh_face
         - if:
             condition:
-              lambda: return x == "double";
+              lambda: return x == "double" && !id(alarm_ringing) && !id(alarm_snoozing);
             then:
               - script.execute: show_network
         - if:
             condition:
-              lambda: return x == "triple";
+              lambda: return x == "triple" && !id(alarm_ringing) && !id(alarm_snoozing);
             then:
               - script.execute: show_device_id
 
@@ -1129,7 +1333,39 @@ number:
       - lambda: |-
           id(htram_core)->send_backlight(x);
 
+datetime:
+  # Час живе на пристрої, а не в автоматизації Home Assistant: будильник
+  # потрібен саме тоді, коли на інфраструктуру покладатись не можна. HA лише
+  # виставляє значення, воно переживає перезавантаження.
+  - platform: template
+    id: alarm_time
+    name: "Будильник"
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "07:30:00"
+    icon: "mdi:alarm"
+    on_time:
+      - if:
+          condition:
+            switch.is_on: alarm_enabled
+          then:
+            - script.execute: alarm_ring
+    on_value:
+      - script.execute: refresh_alarm_ui
+
 switch:
+  - platform: template
+    name: "Будильник увімкнено"
+    id: alarm_enabled
+    icon: "mdi:alarm-check"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    turn_on_action:
+      - script.execute: refresh_alarm_ui
+    turn_off_action:
+      - script.execute: alarm_dismiss
+
   # LED state is authoritative on the GD32 (it lights green at boot and mirrors
   # its real state back over telemetry); DISABLED restore keeps the ESP from
   # overriding it on connect.
