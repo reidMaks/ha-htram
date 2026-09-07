@@ -304,7 +304,33 @@ function drawIcon(ctx, wdg) {
   ctx.lineWidth = Math.max(1, s / 10);
   ctx.lineCap = 'round';
 
-  if (name === 'wifi_off') {
+  if (name === 'bell') {
+    // Будильник. Купол, підошва, язичок — контуром, бо на панелі це буде
+    // однобітний гліф MDI, залитий одним кольором.
+    ctx.lineWidth = Math.max(1.5, s / 9);
+    ctx.beginPath();
+    ctx.moveTo(s * .16, s * .70);
+    ctx.quadraticCurveTo(s * .22, s * .66, s * .22, s * .44);
+    ctx.arc(s / 2, s * .44, s * .28, Math.PI, 0);
+    ctx.quadraticCurveTo(s * .78, s * .66, s * .84, s * .70);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.beginPath(); ctx.arc(s / 2, s * .82, s * .09, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(s / 2, s * .14, s * .05, 0, 7); ctx.fill();
+  } else if (name === 'alert') {
+    // Тривога. Трикутник зі знаком оклику — впізнається на будь-якому розмірі.
+    ctx.lineWidth = Math.max(2, s / 8);
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(s / 2, s * .08);
+    ctx.lineTo(s * .96, s * .88);
+    ctx.lineTo(s * .04, s * .88);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.lineWidth = Math.max(2, s / 7);
+    ctx.beginPath(); ctx.moveTo(s / 2, s * .38); ctx.lineTo(s / 2, s * .64); ctx.stroke();
+    ctx.beginPath(); ctx.arc(s / 2, s * .76, Math.max(1, s / 14), 0, 7); ctx.fill();
+  } else if (name === 'wifi_off') {
     for (let i = 0; i < 2; i++) {
       ctx.beginPath();
       ctx.arc(s / 2, s * .82, s * (.18 + i * .22), Math.PI * 1.3, Math.PI * 1.7);
