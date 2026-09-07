@@ -17,6 +17,7 @@ dev = [
     "homeassistant>=2025.4.4",
     "paho-mqtt>=2.1.0",
     "pytest-homeassistant-custom-component==0.13.357",
+    "scikit-image>=0.26.0",
     "serialx>=1.9.0",
 ]
 

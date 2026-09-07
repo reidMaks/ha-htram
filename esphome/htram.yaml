@@ -56,6 +56,24 @@ substitutions:
   # даних JAAM і в HA штатно не потрапляє; коли з'явиться — сюди додасться
   # друга сутність, яка обиратиме гліф у слоті.
   alert_entity: binary_sensor.air_raid_alert
+  # Типи загроз з інтеграції jaam_ha (J-A-A-M/jaam_ha, MIT). Вона віддає їх
+  # окремими бінарними сенсорами `home_alert_<тип>`; підставте свої entity_id.
+  # Поки сутності не існує, її стан рахується вимкненим — у слоті лишається
+  # загальний трикутник, і нічого не ламається.
+  # Звук тривоги — коротке привертання уваги, а не сигналізація: на вулиці й
+  # так виють сирени, і змагатися з ними зумеру немає сенсу. Три висхідні ноти
+  # на початок, три низхідні на відбій — щоб їх не переплутати між собою й не
+  # сплутати з будильником, у якого двотонове хитання по 300 мс.
+  #
+  # Ноти в гучній смузі динаміка (1760–2093 Гц, виміряно): a6, b6, c7. Вище
+  # 2200 гучність провалюється на 12 дБ, тож «вище — тривожніше» тут не працює.
+  alert_start_rtttl: "AlertOn:d=8,o=6,b=180:a,b,c7,16p,a,b,c7"
+  alert_clear_rtttl: "AlertOff:d=8,o=6,b=180:c7,b,a"
+  alert_ballistic_entity: binary_sensor.jaam_home_alert_ballistic
+  alert_kab_entity: binary_sensor.jaam_home_alert_kab
+  alert_missile_entity: binary_sensor.jaam_home_alert_missiles
+  alert_drone_entity: binary_sensor.jaam_home_alert_drones
+  alert_recon_entity: binary_sensor.jaam_home_alert_recon
   # Скільки хвилин після початку тривоги й після відбою цифри годинника
   # тримають колір. Тривога триває годинами, і постійно червоний годинник за
   # півгодини перестає бути інформацією — кольором позначається ПОДІЯ.
@@ -216,6 +234,25 @@ image:
   # Повітряних Сил, — саме такі виживають на 4.5 мм, на відміну від силуетів.
   - file: "images/alert_mask.png"
     id: img_alert
+    type: BINARY
+
+  # Силуети типів загроз. Обведені з кастомного паку каналу Повітряних Сил
+  # (tools/images/trace_mask.py); знімки-джерела лежать у images/src/ і не
+  # комітяться. Разом усі шість — 1.3 КБ однобітних масок.
+  - file: "images/threat_ballistic_mask.png"
+    id: img_ballistic
+    type: BINARY
+  - file: "images/threat_kab_mask.png"
+    id: img_kab
+    type: BINARY
+  - file: "images/threat_missile_mask.png"
+    id: img_missile
+    type: BINARY
+  - file: "images/threat_drone_mask.png"
+    id: img_drone
+    type: BINARY
+  - file: "images/threat_recon_mask.png"
+    id: img_recon
     type: BINARY
 
   # Дзвінок для слота: заливний, а не контурний — на 4.5 мм штрих у 0.45 мм не
@@ -612,7 +649,12 @@ script:
           const bool armed = id(alarm_enabled).state;
           const int sig = (armed ? 1 : 0) | (id(alarm_ringing) ? 2 : 0) |
                           (id(alarm_snoozing) ? 4 : 0) | (id(alert_active) ? 8 : 0) |
-                          ((id(alarm_time).hour * 60 + id(alarm_time).minute) << 4);
+                          (id(alert_ballistic).state ? 16 : 0) |
+                          (id(alert_kab).state ? 32 : 0) |
+                          (id(alert_missile).state ? 64 : 0) |
+                          (id(alert_drone).state ? 128 : 0) |
+                          (id(alert_recon).state ? 256 : 0) |
+                          ((id(alarm_time).hour * 60 + id(alarm_time).minute) << 9);
           if (sig == id(alarm_ui_sig)) return;
           id(alarm_ui_sig) = sig;
 
@@ -635,10 +677,24 @@ script:
           // Слот один, претендентів двоє. Тривога вища за будильник: якщо
           // повітряна тривога триває, дзвінок поступається місцем.
           const bool alert = id(alert_active);
-          if (alert)
+          if (alert) {
+            // Показуємо найшвидшу з активних загроз, а не першу за списком:
+            // балістика лишає хвилини, розвідник — годину.
+            auto *src = id(img_alert);
+            if (id(alert_ballistic).state)     src = id(img_ballistic);
+            else if (id(alert_kab).state)      src = id(img_kab);
+            else if (id(alert_missile).state)  src = id(img_missile);
+            else if (id(alert_drone).state)    src = id(img_drone);
+            else if (id(alert_recon).state)    src = id(img_recon);
+            lv_image_set_src(id(ui_alert), src->get_lv_image_dsc());
+            lv_obj_set_style_image_recolor(id(ui_alert), lv_color_hex(0xE5484D),
+                                           LV_PART_MAIN);
+            lv_obj_set_style_image_recolor_opa(id(ui_alert), LV_OPA_COVER,
+                                               LV_PART_MAIN);
             lv_obj_remove_flag(id(ui_alert), LV_OBJ_FLAG_HIDDEN);
-          else
+          } else {
             lv_obj_add_flag(id(ui_alert), LV_OBJ_FLAG_HIDDEN);
+          }
 
           // Дзвінок лишається на екрані весь епізод, а не лише поки лунає:
           // відкладений будильник — це не «нічого не відбувається», він
@@ -1107,17 +1163,22 @@ lvgl:
           # Дзвінок з'являється лише поки будильник дзвонить: заведений показує
           # тільки засічку. Слот 40×40 з центром (194, 94).
           # Той самий слот, що й дзвінок: тривога має пріоритет над будильником.
+          # Центр слота — (194, 94), тобто +74/−26 від центру екрана. Через
+          # align, а не через x/y: силуети різної ширини (32…56 px), і за
+          # фіксованим лівим краєм вони б стрибали.
           - image:
               id: ui_alert
-              x: 177
-              y: 74
+              align: center
+              x: 74
+              y: -26
               src: img_alert
               hidden: true
 
           - image:
               id: ui_bell
-              x: 179
-              y: 74
+              align: center
+              x: 74
+              y: -26
               src: img_bell
               hidden: true
 
@@ -1297,7 +1358,40 @@ binary_sensor:
             // і сплутати їх неможливо.
             id(alert_mark_color) = on ? 0xE5484D : 0x3DD68C;
           }
+          id(htram_core)->play_rtttl(on ? "${alert_start_rtttl}"
+                                        : "${alert_clear_rtttl}");
       - script.execute: refresh_alert_marks
+      - script.execute: refresh_alarm_ui
+
+  - platform: homeassistant
+    id: alert_ballistic
+    entity_id: ${alert_ballistic_entity}
+    internal: true
+    on_state:
+      - script.execute: refresh_alarm_ui
+  - platform: homeassistant
+    id: alert_kab
+    entity_id: ${alert_kab_entity}
+    internal: true
+    on_state:
+      - script.execute: refresh_alarm_ui
+  - platform: homeassistant
+    id: alert_missile
+    entity_id: ${alert_missile_entity}
+    internal: true
+    on_state:
+      - script.execute: refresh_alarm_ui
+  - platform: homeassistant
+    id: alert_drone
+    entity_id: ${alert_drone_entity}
+    internal: true
+    on_state:
+      - script.execute: refresh_alarm_ui
+  - platform: homeassistant
+    id: alert_recon
+    entity_id: ${alert_recon_entity}
+    internal: true
+    on_state:
       - script.execute: refresh_alarm_ui
 
   - platform: htram_gd32
