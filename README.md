@@ -7,6 +7,12 @@ reverse-engineered from the vendor's Android app after Honeywell shut the cloud
 service down. Everything here is local: nothing talks to Honeywell, because
 there is no longer anything to talk to.
 
+> This integration speaks to the monitor's **stock** firmware. There is also a
+> custom firmware for the same hardware — ESPHome on the ESP32 and bare-metal
+> on the GD32, replacing the vendor image entirely — which lives in
+> [reidMaks/htram-esphome](https://github.com/reidMaks/htram-esphome) and does
+> not need this integration at all.
+
 The device speaks two protocols and the integration uses both.
 
 | | Bluetooth | MQTT |
@@ -133,9 +139,12 @@ inside a real Home Assistant through
 Home Assistant version it targets; they must be bumped together.
 
 `tools/` holds the console programs the protocol was worked out with: a BLE
-client, a WiFi provisioner, a UART sniffer, a standalone MQTT-over-WSS broker,
-downlink command testing, SWD flash extractors, and a telemetry decoder. They are independent of
-Home Assistant and are the right place to start when something needs debugging at the protocol level.
+client, a WiFi provisioner, a standalone MQTT-over-WSS broker, downlink command
+testing, and a telemetry decoder. They are independent of Home Assistant and
+are the right place to start when something needs debugging at the protocol
+level. The hardware-side tooling — SWD flashing, the UART bridge, the display
+studio — moved to
+[htram-esphome](https://github.com/reidMaks/htram-esphome) with the firmware.
 
 ## Legal, Research & Safety Disclaimer
 
@@ -153,7 +162,7 @@ This project is completely unofficial and is **not** endorsed, sponsored, certif
 ### 3. Clean-Room & Content Distribution
 This repository contains original open-source integration code, clean-room protocol specifications, and hardware documentation. It **does not** host, redistribute, or license any proprietary vendor firmware binaries, copyrighted graphic assets, or private cryptographic keys.
 
-Third-party material that *is* included is limited to fonts, each with its own licence alongside it in [`esphome/fonts/`](esphome/fonts/): Noto Sans under the SIL Open Font License 1.1, and DejaVu Sans ExtraLight (plus an oblique this project derived from it) under the Bitstream Vera licence. The MIT licence at the root covers this project's own code and documentation, not those fonts.
+This repository contains no third-party material: it is the integration and the console tools, and nothing else. The MIT licence at the root covers all of it. (The fonts that used to be listed here moved to [htram-esphome](https://github.com/reidMaks/htram-esphome) with the firmware that embeds them.)
 
 ### 4. Hardware Safety & Limitation of Liability
 All software, scripts, hardware pinouts, and instructions are provided **"AS IS"**, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE. 
