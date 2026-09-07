@@ -14,10 +14,12 @@ static void ws_event_handler(void *arg, esp_event_base_t base, int32_t id, void 
   auto *ev = static_cast<esp_websocket_event_data_t *>(data);
   switch (id) {
     case WEBSOCKET_EVENT_CONNECTED:
+      ESP_LOGI(TAG, "connected to the alert map");
       self->set_connected(true);
       break;
     case WEBSOCKET_EVENT_DISCONNECTED:
     case WEBSOCKET_EVENT_CLOSED:
+      ESP_LOGW(TAG, "alert map unreachable");
       self->set_connected(false);
       break;
     case WEBSOCKET_EVENT_DATA:
@@ -36,11 +38,17 @@ void JaamWsComponent::setup() {
   esp_websocket_client_config_t cfg = {};
   cfg.uri = uri.c_str();
   // The map sends nothing while nothing changes, so silence is normal and must
-  // not be read as a dead link. Its own integration keeps a 30 s heartbeat;
-  // this does the same and lets the client reconnect on its own.
-  cfg.reconnect_timeout_ms = 10000;
+  // not be read as a dead link -- the ping/pong is what tells the two apart.
+  //
+  // Both timings matter. A device that loses power never closes its TCP
+  // connection: it just stops answering, and the socket stays open as far as
+  // this end is concerned. Only the unanswered ping reveals it, and the
+  // library's default pingpong_timeout_sec is 120 -- so a dead alert map took
+  // over two minutes to notice, which for this of all things is too long.
+  cfg.reconnect_timeout_ms = 5000;
   cfg.network_timeout_ms = 10000;
-  cfg.ping_interval_sec = 30;
+  cfg.ping_interval_sec = 10;
+  cfg.pingpong_timeout_sec = 20;
   cfg.disable_auto_reconnect = false;
   cfg.buffer_size = 2048;
 

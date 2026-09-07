@@ -257,6 +257,13 @@ image:
     id: img_alert
     type: BINARY
 
+  # Той самий трикутник, але дрібний: у кутку він означає не тривогу, а те, що
+  # про тривогу нічого не відомо — мапа недосяжна. Місце й колір відрізняють
+  # його від справжньої, форма каже, про що саме мовчанка.
+  - file: "images/alert_small_mask.png"
+    id: img_nolink
+    type: BINARY
+
   # Силуети типів загроз. Обведені з кастомного паку каналу Повітряних Сил
   # (tools/images/trace_mask.py); знімки-джерела лежать у images/src/ і не
   # комітяться. Разом усі шість — 1.3 КБ однобітних масок.
@@ -387,6 +394,12 @@ globals:
     type: bool
     restore_value: false
     initial_value: "false"
+  # Коли востаннє був зв'язок із мапою. Значок з'являється не миттєво:
+  # перепідключення триває секунди, і блимати на кожному з них — шум.
+  - id: jaam_seen_ms
+    type: uint32_t
+    restore_value: false
+    initial_value: "0"
   - id: alert_mark_until
     type: int
     restore_value: false
@@ -994,6 +1007,27 @@ interval:
           else:
             - lambda: |-
                 if (id(ha_link)) { id(ha_link) = false; id(refresh_pocket).execute(); }
+      # Мапа недосяжна довше півхвилини — кажемо про це прямо. Мовчання екрана
+      # інакше означає і «тривоги немає», і «ми не знаємо», а це різні речі.
+      - lambda: |-
+          const uint32_t now_ms = millis();
+          if (id(jaam)->connected()) id(jaam_seen_ms) = now_ms;
+          const bool lost = id(jaam_seen_ms) == 0
+                                ? now_ms > 30000
+                                : (now_ms - id(jaam_seen_ms)) > 30000;
+          static int shown = -1;
+          if ((int) lost != shown) {
+            shown = lost;
+            if (lost) {
+              lv_obj_set_style_image_recolor(id(ui_nolink), lv_color_hex(0x707880),
+                                             LV_PART_MAIN);
+              lv_obj_set_style_image_recolor_opa(id(ui_nolink), LV_OPA_COVER,
+                                                 LV_PART_MAIN);
+              lv_obj_remove_flag(id(ui_nolink), LV_OBJ_FLAG_HIDDEN);
+            } else {
+              lv_obj_add_flag(id(ui_nolink), LV_OBJ_FLAG_HIDDEN);
+            }
+          }
       - script.execute: refresh_face
       - script.execute: refresh_alarm_ui
       - script.execute: refresh_alert_marks
@@ -1277,6 +1311,17 @@ lvgl:
               text_font: font_slot
               text_color: 0xC2C8D0
               text: ""
+
+          # Нижній ПРАВИЙ кут, поза кільцем. Не лівий: засічка будильника сидить
+          # на кільці під кутом своєї години, і на ранковий будильник це якраз
+          # нижній лівий сектор — два значки опинялись поруч і зливались.
+          - image:
+              id: ui_nolink
+              align: center
+              x: 89
+              y: 89
+              src: img_nolink
+              hidden: true
 
           - label:
               id: ui_pocket
