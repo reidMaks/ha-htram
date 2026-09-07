@@ -1,5 +1,22 @@
 substitutions:
   name: htram
+  # Мелодія Вербицького (1863) — суспільне надбання. Уривок, що грає в кінці
+  # хвилини мовчання; ~9.8 с на b=200.
+  # Метроном хвилини мовчання. Значення взяті з прошивки мапи тривог JAAM
+  # (`MOS_BEEP:d=4,o=4,b=250:g` раз на 2000 мс), бо саме такий звук впізнається
+  # як меморіальний метроном: соль малої октави, майже чверть секунди — низький
+  # протяжний удар. Вище й коротше — і це вже писк будильника, перевірено.
+  # Палітра хвилини мовчання. Фон лишається чорним не з економії, а тому що
+  # матриця квадратна, а рамка навколо скла кругла: будь-яка суцільна заливка
+  # проявляє квадрат посеред кола. Чорний зливається з рамкою, і видно лише те,
+  # що світиться, — на цьому побудоване все обличчя. Червоне на чорному ще й
+  # точніше за регістром: це колір скорботи, а не державності.
+  silence_bg: "0x000000"
+  silence_fg: "0xC1121F"
+  silence_tick_seconds: "2"
+  silence_tick_hz: "392"
+  silence_tick_ms: "240"
+  anthem_rtttl: "UkraineAnthem:d=4,o=5,b=200:2d5,4d5,32p,4d5,32p,4d5,32p,4c5,4d5,4d#5,2f5,32p,4f5,4d#5,2d5,2c5,2a#4,2d5,2a4,2d5,1g4,32p,1g4"
   friendly_name: HTRAM
   # Home Assistant weather entity the outdoor slot reads from.
   weather_entity: weather.forecast_home
@@ -153,6 +170,16 @@ display:
     id: htram_display
     update_interval: never
 
+image:
+  # Малий Державний Герб. Джерело — SVG користувача, з якого взято сам знак
+  # (у файлі він темний на світлому полі щита) і збережено як однобітну маску:
+  # у LVGL вона стає LV_COLOR_FORMAT_A1, тобто силуетом без власного кольору.
+  # 2 КБ замість 32 КБ, які коштувало б те саме зображення в RGB565, а колір
+  # накладає refresh_face. Державні символи не є об'єктом авторського права.
+  - file: "images/tryzub_mask.png"
+    id: img_tryzub
+    type: BINARY
+
 font:
   # Digits only, and pre-slanted: ESPHome renders from the TTF at build time and
   # LVGL has no shear, so the 12 deg oblique is baked into the file by
@@ -224,6 +251,21 @@ globals:
     type: int
     restore_value: false
     initial_value: "-1"
+  # 09:00, one minute, every day. Kept as device state rather than a Home
+  # Assistant automation on purpose: this is the one minute of the day where
+  # "it did not fire because HA was restarting" is not an acceptable outcome.
+  - id: silence_active
+    type: bool
+    restore_value: false
+    initial_value: "false"
+  # Окремо від silence_active: обличчя лишається синім і на час гімну, а
+  # метроном на цей час мусить замовкнути. CMD_BEEP на GD32 не додає ноту в
+  # чергу, а заміщає її (`mel_count = 1`), тож один тік обриває мелодію —
+  # рівно це й сталось на першій перевірці.
+  - id: silence_ticking
+    type: bool
+    restore_value: false
+    initial_value: "false"
   # The AP face has two pages: 0 = QR to scan, 1 = the same credentials as text.
   - id: ap_page
     type: int
@@ -311,7 +353,10 @@ script:
           const bool net = wifi::global_wifi_component->is_connected();
           const bool have_time = id(ha_time).now().is_valid();
 
-          const int want = ap ? 3 : (have_time ? 0 : (net ? 1 : 2));
+          // Priority, as written down in TODO §13: the AP outranks everything
+          // (a device asking to be configured can do nothing else useful), then
+          // the minute of silence, then the ordinary faces.
+          const int want = ap ? 3 : (id(silence_active) ? 4 : (have_time ? 0 : (net ? 1 : 2)));
           if (want != 3) id(ap_manual) = false;
           if (want == id(face_state)) return;
           id(face_state) = want;
@@ -328,6 +373,34 @@ script:
           lv_obj_t *const msg[] = {id(ui_msg_cap), id(ui_msg), id(ui_msg_sub),
                                    id(ui_msg2), id(ui_ap_card), id(ui_ap_qr)};
           for (auto *o : msg) lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+
+          // The blue only exists during the minute; everything else is drawn on
+          // black, so this is set and unset here rather than per widget.
+          lv_obj_set_style_bg_color(id(ui_root),
+                                    lv_color_hex(want == 4 ? ${silence_bg} : 0x000000),
+                                    LV_PART_MAIN);
+          // The dot keeps its ordinary job -- it just has to be visible against
+          // the blue, and against the blue it becomes the flag's other colour.
+          lv_obj_set_style_bg_color(id(ui_secdot),
+                                    lv_color_hex(want == 4 ? ${silence_fg} : 0xB9AFA3),
+                                    LV_PART_MAIN);
+
+          if (want == 4) {
+            // The emblem carries no colour of its own -- A1 is a silhouette --
+            // so it is tinted here rather than baked into the asset.
+            lv_obj_set_style_image_recolor(id(ui_tryzub), lv_color_hex(${silence_fg}),
+                                           LV_PART_MAIN);
+            lv_obj_set_style_image_recolor_opa(id(ui_tryzub), LV_OPA_COVER,
+                                               LV_PART_MAIN);
+            lv_obj_remove_flag(id(ui_tryzub), LV_OBJ_FLAG_HIDDEN);
+            // Nothing else is shown. The seconds dot is already circling, and
+            // starting at 09:00:00 it completes exactly one revolution as the
+            // minute runs out -- motion that costs nothing and means the right
+            // thing.
+            return;
+          }
+          lv_obj_add_flag(id(ui_tryzub), LV_OBJ_FLAG_HIDDEN);
+
           if (want == 0) return;
 
           if (want == 3) {
@@ -404,6 +477,40 @@ script:
       - script.execute: refresh_clock
       - script.execute: refresh_slot
       - script.execute: refresh_pocket
+
+  # 09:00. Flag blue, a metronome tick a second the way broadcasts mark it, and
+  # the LEDs dark: a green "the air is fine" light through this minute would be
+  # the wrong thing to say. Runs on the device; Home Assistant only gets a
+  # switch to turn the whole thing off, since this unit may not be in Ukraine.
+  - id: minute_of_silence
+    mode: single
+    then:
+      - lambda: |-
+          id(silence_active) = true;
+          id(silence_ticking) = true;
+          id(face_state) = -1;
+          id(htram_core)->send_leds(0, 0, 0, 0);
+      - script.execute: refresh_face
+      # The ticking itself lives in the 1 s interval below, the same one that
+      # moves the dot: sound and motion then share a clock instead of each
+      # keeping its own. A `repeat` with a delay drifts by however long the
+      # loop took, and only ever ticks after everything else has finished.
+      - delay: 60s
+      # The minute ends, and the anthem closes it -- the face stays as it is
+      # until the melody is done, which is what the delay is for. The metronome
+      # has to stop first: a beep replaces whatever the buzzer is playing.
+      - lambda: |-
+          id(silence_ticking) = false;
+          id(htram_core)->play_rtttl("${anthem_rtttl}");
+      - delay: 11s
+      - lambda: |-
+          id(silence_active) = false;
+          id(face_state) = -1;
+      - script.execute: refresh_face
+      - script.execute: refresh_clock
+      - script.execute: refresh_slot
+      - script.execute: refresh_pocket
+      - script.execute: refresh_leds
 
   - id: refresh_slot
     then:
@@ -507,6 +614,13 @@ script:
 interval:
   - interval: 1s
     then:
+      - lambda: |-
+          if (id(silence_ticking)) {
+            static uint32_t sec = 0;
+            if (sec++ % ${silence_tick_seconds} == 0) {
+              id(htram_core)->send_beep(${silence_tick_hz}, ${silence_tick_ms});
+            }
+          }
       # A GD32 that has just restarted spent its first ~700 ms with no USART1,
       # so the top of our last frame and every command we sent in that window
       # were dropped on the floor -- which is why a standby wake used to leave
@@ -568,6 +682,18 @@ interval:
 time:
   - platform: homeassistant
     id: ha_time
+    on_time:
+      # Only on this one platform: both write the same system clock, so arming
+      # the cron on each of them would fire the minute twice.
+      - hours: 9
+        minutes: 0
+        seconds: 0
+        then:
+          - if:
+              condition:
+                switch.is_on: silence_enabled
+              then:
+                - script.execute: minute_of_silence
     on_time_sync:
       then:
         - script.execute: refresh_clock
@@ -599,6 +725,7 @@ lvgl:
   refresh_interval: 200ms
   widgets:
     - obj:
+        id: ui_root
         width: 240
         height: 240
         pad_all: 0
@@ -739,6 +866,12 @@ lvgl:
           # network name and its password. Positions are set at runtime by
           # refresh_face, since a two-line face and a four-line face cannot
           # share one set of offsets.
+          - image:
+              id: ui_tryzub
+              align: center
+              src: img_tryzub
+              hidden: true
+
           - label:
               id: ui_msg_cap
               align: center
@@ -965,6 +1098,16 @@ button:
     on_press:
       - script.execute: show_device_id
 
+  # Otherwise this feature is observable once a day, at nine, and only ever
+  # tomorrow. Diagnostic rather than a normal control: it is for checking that
+  # the thing works, not for holding minutes of silence on demand.
+  - platform: template
+    name: "Хвилина мовчання: перевірка"
+    icon: "mdi:candle"
+    entity_category: diagnostic
+    on_press:
+      - script.execute: minute_of_silence
+
   - platform: template
     name: "Beep"
     icon: "mdi:volume-high"
@@ -1003,6 +1146,13 @@ switch:
       name: "LED Green"
       icon: "mdi:led-on"
       restore_mode: DISABLED
+
+  - platform: template
+    name: "Хвилина мовчання"
+    id: silence_enabled
+    icon: "mdi:candle"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
 
   - platform: template
     name: "LED Auto"
