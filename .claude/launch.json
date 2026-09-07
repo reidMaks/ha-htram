@@ -4,8 +4,11 @@
     {
       "name": "uidesign",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["tools/uidesign/serve.py", "8099"],
-      "port": 8099
+      "runtimeArgs": [
+        "tools/uidesign/serve.py"
+      ],
+      "port": 8099,
+      "autoPort": true
     }
   ]
 }

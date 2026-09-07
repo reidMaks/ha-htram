@@ -422,9 +422,16 @@ function render(ctx) {
 
 /* ---------- UART cost ----------
    Every widget that changes has to travel to the GD32 as a DRAW_RECT frame:
-   11 bytes of header/CRC plus 2 bytes per pixel, at 115200 8N1 = 11520 B/s. */
+   11 bytes of header/CRC plus 2 bytes per pixel, at 921600 8N1 = 92160 B/s.
 
-const HEADER = 11, BAUD_BPS = 11520;
+   This said 115200 long after the link was moved to 921600, which made the
+   studio quote every widget eight times more expensive than it is -- and this
+   is the one number a layout gets judged on. A sweeping arc reads as 5.6 s of
+   link here and 0.7 s on the device; an animated 40x40 icon reads as
+   unaffordable and is in fact 0.35 ms a frame. Keep this in step with
+   GD32_UART_BAUD in the firmware. */
+
+const HEADER = 11, BAUD_BPS = 92160;
 function cost(w, h) {
   const bytes = w * h * 2 + HEADER;
   return { bytes, ms: (bytes / BAUD_BPS) * 1000 };
