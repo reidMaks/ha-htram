@@ -19,6 +19,12 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The integration is imported as `custom_components.htram`, and nothing else
+# puts the repository root on sys.path: there is no build-system table, so uv
+# never installs this project into the venv. Without this, `uv run pytest`
+# fails at collection while `python -m pytest` works, purely because the
+# latter adds the working directory.
+pythonpath = ["."]
 # pytest-homeassistant-custom-component ships autouse async fixtures, which
 # pytest-asyncio only handles in auto mode.
 asyncio_mode = "auto"

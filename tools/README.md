@@ -863,10 +863,10 @@ The downlink mystery has been completely solved by extracting and reverse-engine
 
 The GD32F150C8T6 application MCU had Readout Protection Level 1 (RDP1) enabled. Direct SWD flash reads produced `HardFault`. However, GD32F150 chips suffer from hardware design flaws in their CoreSight debug implementation (GigaVulnerability #2):
 * GD32 gates Flash bus access based on the state of the CoreSight DP register `0x4` (`CDBGPWRUPREQ`).
-* We loaded an SRAM-resident dumper (`tools/swd/flash_dump.c`) at `0x20000000` via OpenOCD with a Raspberry Pi Debugprobe (Pico CMSIS-DAPv2).
+* We loaded an SRAM-resident dumper ([`tools/swd/flash_dump.c`](https://github.com/reidMaks/htram-esphome/blob/main/tools/swd/flash_dump.c), now in the firmware repository) at `0x20000000` via OpenOCD with a Raspberry Pi Debugprobe (Pico CMSIS-DAPv2).
 * OpenOCD cleared `CDBGPWRUPREQ` using `stm32f1x.dap dpreg 0x4 0x0`.
 * Clearing debug power released the hardware flash lock while our SRAM code continued running uninterrupted.
-* The SRAM program read all 64 KB of flash (`0x08000000`–`0x0800FFFF`) and transmitted it over USART1 PA2 at 115200 baud to `tools/swd/capture_dump.py`, producing a bit-perfect dump.
+* The SRAM program read all 64 KB of flash (`0x08000000`–`0x0800FFFF`) and transmitted it over USART1 PA2 at 115200 baud to [`tools/swd/capture_dump.py`](https://github.com/reidMaks/htram-esphome/blob/main/tools/swd/capture_dump.py), producing a bit-perfect dump.
 
 #### SWD Hardware Pinout & Wiring
 
@@ -879,7 +879,7 @@ Factory test points on the back side of the PCB (`Storm Shadow Main Board REV3`)
 | **`GND`** | Pin 47 | `VSS` | **GND** | **GND** (Pin 3 / USB metal shield) |
 | — | Pin 12 | `PA2` (to **ESP32 Pin 25 / `GPIO16` `RXD2`**) | USART1_TX | **GP5** (Pin 7, serial logs / dump capture) |
 
-*(See [`tools/swd/README.md`](swd/README.md) for full flashing instructions, OpenOCD configuration, and unprotect commands).*
+*(See [`tools/swd/README.md`](https://github.com/reidMaks/htram-esphome/blob/main/tools/swd/README.md) for full flashing instructions, OpenOCD configuration, and unprotect commands).*
 
 ### 2. Why Earlier Downlink Attempts Failed
 
