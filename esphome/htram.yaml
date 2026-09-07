@@ -51,15 +51,6 @@ substitutions:
   friendly_name: HTRAM
   # Home Assistant weather entity the outdoor slot reads from.
   weather_entity: weather.forecast_home
-  # Сутність повітряної тривоги в Home Assistant. Поки це `ukraine_alarm` із
-  # ядра — сам факт тривоги, без типу загрози. Тип (дрон/ракета/КАБ) є лише в
-  # даних JAAM і в HA штатно не потрапляє; коли з'явиться — сюди додасться
-  # друга сутність, яка обиратиме гліф у слоті.
-  alert_entity: binary_sensor.air_raid_alert
-  # Типи загроз з інтеграції jaam_ha (J-A-A-M/jaam_ha, MIT). Вона віддає їх
-  # окремими бінарними сенсорами `home_alert_<тип>`; підставте свої entity_id.
-  # Поки сутності не існує, її стан рахується вимкненим — у слоті лишається
-  # загальний трикутник, і нічого не ламається.
   # Звук тривоги — коротке привертання уваги, а не сигналізація: на вулиці й
   # так виють сирени, і змагатися з ними зумеру немає сенсу. Три висхідні ноти
   # на початок, три низхідні на відбій — щоб їх не переплутати між собою й не
@@ -69,11 +60,6 @@ substitutions:
   # 2200 гучність провалюється на 12 дБ, тож «вище — тривожніше» тут не працює.
   alert_start_rtttl: "AlertOn:d=8,o=6,b=180:a,b,c7,16p,a,b,c7"
   alert_clear_rtttl: "AlertOff:d=8,o=6,b=180:c7,b,a"
-  alert_ballistic_entity: binary_sensor.jaam_home_alert_ballistic
-  alert_kab_entity: binary_sensor.jaam_home_alert_kab
-  alert_missile_entity: binary_sensor.jaam_home_alert_missiles
-  alert_drone_entity: binary_sensor.jaam_home_alert_drones
-  alert_recon_entity: binary_sensor.jaam_home_alert_recon
   # Скільки хвилин після початку тривоги й після відбою цифри годинника
   # тримають колір. Тривога триває годинами, і постійно червоний годинник за
   # півгодини перестає бути інформацією — кольором позначається ПОДІЯ.
@@ -219,6 +205,41 @@ uart:
   # The resident flasher inherits USART1_BAUD from the firmware, so GD32 OTA
   # runs at this speed too.
   baud_rate: 921600
+
+# Мапа тривог JAAM у локальній мережі. Ім'я .local, а не адреса: пристрій
+# оголошується через mDNS як `_jaam-ws._tcp`, і DHCP може змінити IP.
+#
+# Напряму, а не через Home Assistant, свідомо: тривога — це рівно те, що не
+# має зникати через перезавантаження домашнього сервера. Той самий аргумент,
+# що поставив на пристрій будильник і хвилину мовчання.
+jaam_ws:
+  id: jaam
+  host: jaam-one.local
+  port: 81
+  on_flags:
+    then:
+      - lambda: |-
+          // Біти з ALERT_TYPES інтеграції jaam_ha: 0 повітряна, 5 дрони,
+          // 6 ракети, 7 КАБи, 8 балістика, 10 розвідники.
+          const bool air = flags & (1u << 0);
+          id(alert_ballistic) = flags & (1u << 8);
+          id(alert_kab)       = flags & (1u << 7);
+          id(alert_missile)   = flags & (1u << 6);
+          id(alert_drone)     = flags & (1u << 5);
+          id(alert_recon)     = flags & (1u << 10);
+
+          if (air != id(alert_active)) {
+            id(alert_active) = air;
+            auto now = id(ha_time).now();
+            if (now.is_valid()) {
+              id(alert_mark_until) = now.timestamp + ${alert_mark_minutes} * 60;
+              id(alert_mark_color) = air ? 0xE5484D : 0x3DD68C;
+            }
+            id(htram_core)->play_rtttl(air ? "${alert_start_rtttl}"
+                                           : "${alert_clear_rtttl}");
+          }
+      - script.execute: refresh_alert_marks
+      - script.execute: refresh_alarm_ui
 
 htram_gd32:
   id: htram_core
@@ -374,6 +395,31 @@ globals:
     type: int
     restore_value: false
     initial_value: "0"
+  # Тип загрози приходить від Home Assistant викликом служби, а не з
+  # прив'язаної сутності: entity_id у ESPHome вшивається на етапі збірки, тож
+  # «обрати пристрій у HA» з боку прошивки неможливо. Напрямок повернуто —
+  # джерело обирається в редакторі автоматизацій, а сюди приходить уже готовий
+  # набір прапорців.
+  - id: alert_ballistic
+    type: bool
+    restore_value: false
+    initial_value: "false"
+  - id: alert_kab
+    type: bool
+    restore_value: false
+    initial_value: "false"
+  - id: alert_missile
+    type: bool
+    restore_value: false
+    initial_value: "false"
+  - id: alert_drone
+    type: bool
+    restore_value: false
+    initial_value: "false"
+  - id: alert_recon
+    type: bool
+    restore_value: false
+    initial_value: "false"
   - id: alarm_snoozing
     type: bool
     restore_value: false
@@ -649,11 +695,11 @@ script:
           const bool armed = id(alarm_enabled).state;
           const int sig = (armed ? 1 : 0) | (id(alarm_ringing) ? 2 : 0) |
                           (id(alarm_snoozing) ? 4 : 0) | (id(alert_active) ? 8 : 0) |
-                          (id(alert_ballistic).state ? 16 : 0) |
-                          (id(alert_kab).state ? 32 : 0) |
-                          (id(alert_missile).state ? 64 : 0) |
-                          (id(alert_drone).state ? 128 : 0) |
-                          (id(alert_recon).state ? 256 : 0) |
+                          (id(alert_ballistic) ? 16 : 0) |
+                          (id(alert_kab) ? 32 : 0) |
+                          (id(alert_missile) ? 64 : 0) |
+                          (id(alert_drone) ? 128 : 0) |
+                          (id(alert_recon) ? 256 : 0) |
                           ((id(alarm_time).hour * 60 + id(alarm_time).minute) << 9);
           if (sig == id(alarm_ui_sig)) return;
           id(alarm_ui_sig) = sig;
@@ -681,11 +727,11 @@ script:
             // Показуємо найшвидшу з активних загроз, а не першу за списком:
             // балістика лишає хвилини, розвідник — годину.
             auto *src = id(img_alert);
-            if (id(alert_ballistic).state)     src = id(img_ballistic);
-            else if (id(alert_kab).state)      src = id(img_kab);
-            else if (id(alert_missile).state)  src = id(img_missile);
-            else if (id(alert_drone).state)    src = id(img_drone);
-            else if (id(alert_recon).state)    src = id(img_recon);
+            if (id(alert_ballistic))     src = id(img_ballistic);
+            else if (id(alert_kab))      src = id(img_kab);
+            else if (id(alert_missile))  src = id(img_missile);
+            else if (id(alert_drone))    src = id(img_drone);
+            else if (id(alert_recon))    src = id(img_recon);
             lv_image_set_src(id(ui_alert), src->get_lv_image_dsc());
             lv_obj_set_style_image_recolor(id(ui_alert), lv_color_hex(0xE5484D),
                                            LV_PART_MAIN);
@@ -1340,60 +1386,6 @@ sensor:
         - script.execute: refresh_pocket
 
 binary_sensor:
-  # Джерело — Home Assistant. Поки це `ukraine_alarm` із ядра: сам факт тривоги
-  # по вашому регіону, без типу загрози.
-  - platform: homeassistant
-    id: alert_raw
-    entity_id: ${alert_entity}
-    internal: true
-    on_state:
-      - lambda: |-
-          const bool on = x;
-          if (on == id(alert_active)) return;
-          id(alert_active) = on;
-          auto now = id(ha_time).now();
-          if (now.is_valid()) {
-            id(alert_mark_until) = now.timestamp + ${alert_mark_minutes} * 60;
-            // червоне — почалось, зелене — відбій. Один канал, дві події,
-            // і сплутати їх неможливо.
-            id(alert_mark_color) = on ? 0xE5484D : 0x3DD68C;
-          }
-          id(htram_core)->play_rtttl(on ? "${alert_start_rtttl}"
-                                        : "${alert_clear_rtttl}");
-      - script.execute: refresh_alert_marks
-      - script.execute: refresh_alarm_ui
-
-  - platform: homeassistant
-    id: alert_ballistic
-    entity_id: ${alert_ballistic_entity}
-    internal: true
-    on_state:
-      - script.execute: refresh_alarm_ui
-  - platform: homeassistant
-    id: alert_kab
-    entity_id: ${alert_kab_entity}
-    internal: true
-    on_state:
-      - script.execute: refresh_alarm_ui
-  - platform: homeassistant
-    id: alert_missile
-    entity_id: ${alert_missile_entity}
-    internal: true
-    on_state:
-      - script.execute: refresh_alarm_ui
-  - platform: homeassistant
-    id: alert_drone
-    entity_id: ${alert_drone_entity}
-    internal: true
-    on_state:
-      - script.execute: refresh_alarm_ui
-  - platform: homeassistant
-    id: alert_recon
-    entity_id: ${alert_recon_entity}
-    internal: true
-    on_state:
-      - script.execute: refresh_alarm_ui
-
   - platform: htram_gd32
     usb:
       name: "USB Power"
