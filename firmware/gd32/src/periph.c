@@ -229,13 +229,25 @@ uint32_t periph_millis(void)
  * Timer ticks at 1 MHz so a note of f Hz uses CAR = 1e6/f.
  *
  * Transducer acoustic/electrical behavior:
- * - Resonant frequency of LS1 is ~2304 Hz (half-period = 217 us).
+ * - LS1 was assumed to resonate at ~2304 Hz. Measured on this unit, it does
+ *   not: playing candidate tones interleaved into one recording (8 repeats
+ *   each, microphone a metre away) puts the peak at 1976-2093 Hz, with
+ *   2304 Hz already 12 dB down and 2489 Hz 26 dB down. The loud band is
+ *   1760-2093; above 2200 the transducer falls off a cliff.
+ *
+ *   Anything meant to be heard belongs in that band. The chirps below still
+ *   use 2304 and 2000 from the original assumption -- 2000 is fine, 2304 is
+ *   throwing away 12 dB for no reason and should move when this is next
+ *   touched. The alarm melody in htram.yaml is already tuned to the peak.
  * - Driving lower frequencies (<1.6 kHz) with 50% square waves keeps the switch
  *   closed for hundreds of microseconds (e.g. 1.27 ms at 392 Hz), which drives
  *   the miniature magnetic coil into deep core saturation, pulls down VCC, and
  *   slams the membrane against the core ("хрип").
- * - By capping the HIGH pulse to 220 us, the coil receives its optimal magnetic
- *   impulse regardless of frequency without ever saturating.
+ * - By capping the HIGH pulse (BUZZER_PULSE_MAX_US, 400 us) the coil receives
+ *   its magnetic impulse regardless of frequency without ever saturating. The
+ *   cap only engages below ~1.25 kHz; in the loud band it never does, since
+ *   half a period at 1976 Hz is 253 us. Duty there is a clean 50 %, so the
+ *   cap is not what makes anything quiet.
  * ── */
 #define BUZZER_TICK_HZ 1000000u
 #define BUZZER_PULSE_MAX_US 400u
