@@ -175,8 +175,8 @@
   },
   {
    "id": "x-corners-notch",
-   "name": "X · Кути, засічка, піктограма",
-   "note": "Ідеї користувача: батарея і втрата зв'язку — в кути, як привчили телефони; у кишені після ряду годин — велика піктограма (тут будильник, 46 px); на кільці — засічка часу, на який заведено будильник (7:30 = 225°). Питання, яке видно лише на око: кути лежать ЗА кільцем (137 px від центру проти радіуса 114), тож індикатори опиняються поза композицією. І дві шкали на одному кільці: крапка це секунди (оберт за хвилину), а засічка — година. Те саме місце означає 7 годину і 35 секунду.",
+   "name": "X · Слот порожній, кути по діагоналі",
+   "note": "Стан спокою. Слот піктограми 40×40 з центром (194, 94) стоїть порожній: значок з'являється лише коли будильник задзвонив або триває тривога, а не «будильник заведено». Найближчий кут слота — за 104.6 px від центру проти радіуса кільця 114, тобто 9 px просвіту, щоб не приклеювався. Батарея і втрата зв'язку винесені на діагональ 45° ПОЗА кільце: там мертвий простір, і вони нічого не забирають усередині. На панелі вони й так ледь помітні, тож кут їм не шкодить.",
    "widgets": [
     {
      "type": "arc",
@@ -238,6 +238,147 @@
      "font": 92,
      "family": "dejavuobl",
      "color": "$time",
+     "text": "{mm2}"
+    },
+    {
+     "type": "label",
+     "align": "bottom_mid",
+     "y": -25,
+     "font": 15,
+     "family": "noto",
+     "color": "$caption",
+     "cycle": [
+      "{date}",
+      "{out}° {wxword}",
+      "{temp}°  {hum}%"
+     ]
+    },
+    {
+     "type": "rect",
+     "align": "top_left",
+     "x": 35,
+     "y": 197,
+     "w": 8,
+     "h": 8,
+     "radius": 1,
+     "color": "$warn",
+     "cost": {
+      "w": 8,
+      "h": 8,
+      "note": "засічка будильника"
+     }
+    },
+    {
+     "type": "rect",
+     "align": "top_left",
+     "x": 204,
+     "y": 19,
+     "w": 22,
+     "h": 11,
+     "radius": 2,
+     "border": {
+      "w": 1,
+      "color": "$slot"
+     },
+     "when": "!usb"
+    },
+    {
+     "type": "rect",
+     "align": "top_left",
+     "x": 226,
+     "y": 22,
+     "w": 2,
+     "h": 5,
+     "color": "$slot",
+     "when": "!usb"
+    },
+    {
+     "type": "rect",
+     "align": "top_left",
+     "x": 206,
+     "y": 21,
+     "w": 13,
+     "h": 7,
+     "color": "$slot",
+     "when": "!usb"
+    },
+    {
+     "type": "icon",
+     "name": "wifi_off",
+     "align": "top_left",
+     "x": 14,
+     "y": 14,
+     "size": 22,
+     "color": "$warn",
+     "when": "!link"
+    }
+   ]
+  },
+  {
+   "id": "y-alert",
+   "name": "Y · Тривога в слоті",
+   "note": "Той самий слот, зайнятий типом загрози. Колір = подія: цифри червоніють на 5 хвилин від початку тривоги і ще на 5 після відбою. Піктограма = стан, поки тривога триває. У слот лягає будь-який значок 40×40: будильник, шахед, крилата, балістика — усе, що віддасть API тривог. На пристрої це буде однобітна маска (2 КБ), той самий конвеєр, що й для герба.",
+   "widgets": [
+    {
+     "type": "arc",
+     "align": "center",
+     "d": 228,
+     "width": 2,
+     "start": 270,
+     "end": 270,
+     "color": "$ringfg",
+     "opa": 0.3,
+     "track": "$ring",
+     "value": 1,
+     "rounded": false,
+     "cost": {
+      "w": 12,
+      "h": 12,
+      "note": "статичне кільце + крапка"
+     }
+    },
+    {
+     "type": "label",
+     "align": "top_mid",
+     "x": -46,
+     "y": 44,
+     "ink": true,
+     "font": 92,
+     "family": "dejavuobl",
+     "color": "$alarm",
+     "text": "{hh1}"
+    },
+    {
+     "type": "label",
+     "align": "top_mid",
+     "x": 14,
+     "y": 44,
+     "ink": true,
+     "font": 92,
+     "family": "dejavuobl",
+     "color": "$alarm",
+     "text": "{hh2}"
+    },
+    {
+     "type": "label",
+     "align": "top_mid",
+     "x": -14,
+     "y": 120,
+     "ink": true,
+     "font": 92,
+     "family": "dejavuobl",
+     "color": "$alarm",
+     "text": "{mm1}"
+    },
+    {
+     "type": "label",
+     "align": "top_mid",
+     "x": 46,
+     "y": 120,
+     "ink": true,
+     "font": 92,
+     "family": "dejavuobl",
+     "color": "$alarm",
      "text": "{mm2}"
     },
     {
@@ -272,21 +413,21 @@
      "type": "icon",
      "name": "bell",
      "align": "top_left",
-     "x": 176,
-     "y": 54,
-     "size": 46,
-     "color": "$caption",
+     "x": 174,
+     "y": 74,
+     "size": 40,
+     "color": "$alarm",
      "cost": {
-      "w": 46,
-      "h": 46,
-      "note": "піктограма у кишені годин"
+      "w": 40,
+      "h": 40,
+      "note": "слот піктограми"
      }
     },
     {
      "type": "rect",
      "align": "top_left",
-     "x": 196,
-     "y": 10,
+     "x": 204,
+     "y": 19,
      "w": 22,
      "h": 11,
      "radius": 2,
@@ -299,8 +440,8 @@
     {
      "type": "rect",
      "align": "top_left",
-     "x": 218,
-     "y": 13,
+     "x": 226,
+     "y": 22,
      "w": 2,
      "h": 5,
      "color": "$slot",
@@ -309,8 +450,8 @@
     {
      "type": "rect",
      "align": "top_left",
-     "x": 198,
-     "y": 12,
+     "x": 206,
+     "y": 21,
      "w": 13,
      "h": 7,
      "color": "$slot",
@@ -320,164 +461,9 @@
      "type": "icon",
      "name": "wifi_off",
      "align": "top_left",
-     "x": 12,
-     "y": 10,
-     "size": 18,
-     "color": "$warn",
-     "when": "!link"
-    }
-   ]
-  },
-  {
-   "id": "y-alert",
-   "name": "Y · Тривога: перші 5 хвилин",
-   "note": "Той самий екран у стані тривоги. Колір = подія: цифри червоніють на 5 хвилин від початку і ще на 5 після відбою, потім повертаються. Піктограма = стан, який триває, бо тривога може йти годинами, а червоний годинник за півгодини стає шпалерами. Перефарбування чотирьох цифр коштує 4 × 90 мс.",
-   "widgets": [
-    {
-     "type": "arc",
-     "align": "center",
-     "d": 228,
-     "width": 2,
-     "start": 270,
-     "end": 270,
-     "color": "$ringfg",
-     "opa": 0.3,
-     "track": "$ring",
-     "value": 1,
-     "rounded": false,
-     "cost": {
-      "w": 12,
-      "h": 12,
-      "note": "статичне кільце + крапка"
-     }
-    },
-    {
-     "type": "label",
-     "align": "top_mid",
-     "x": -46,
-     "y": 44,
-     "ink": true,
-     "font": 92,
-     "family": "dejavuobl",
-     "color": "$alarm",
-     "text": "{hh1}"
-    },
-    {
-     "type": "label",
-     "align": "top_mid",
      "x": 14,
-     "y": 44,
-     "ink": true,
-     "font": 92,
-     "family": "dejavuobl",
-     "color": "$alarm",
-     "text": "{hh2}"
-    },
-    {
-     "type": "label",
-     "align": "top_mid",
-     "x": -14,
-     "y": 120,
-     "ink": true,
-     "font": 92,
-     "family": "dejavuobl",
-     "color": "$alarm",
-     "text": "{mm1}"
-    },
-    {
-     "type": "label",
-     "align": "top_mid",
-     "x": 46,
-     "y": 120,
-     "ink": true,
-     "font": 92,
-     "family": "dejavuobl",
-     "color": "$alarm",
-     "text": "{mm2}"
-    },
-    {
-     "type": "label",
-     "align": "bottom_mid",
-     "y": -25,
-     "font": 15,
-     "family": "noto",
-     "color": "$caption",
-     "cycle": [
-      "{date}",
-      "{out}° {wxword}",
-      "{temp}°  {hum}%"
-     ]
-    },
-    {
-     "type": "rect",
-     "align": "top_left",
-     "x": 35,
-     "y": 197,
-     "w": 8,
-     "h": 8,
-     "radius": 1,
-     "color": "$warn",
-     "cost": {
-      "w": 8,
-      "h": 8,
-      "note": "засічка будильника"
-     }
-    },
-    {
-     "type": "icon",
-     "name": "alert",
-     "align": "top_left",
-     "x": 176,
-     "y": 54,
-     "size": 46,
-     "color": "$alarm",
-     "cost": {
-      "w": 46,
-      "h": 46,
-      "note": "піктограма у кишені годин"
-     }
-    },
-    {
-     "type": "rect",
-     "align": "top_left",
-     "x": 196,
-     "y": 10,
-     "w": 22,
-     "h": 11,
-     "radius": 2,
-     "border": {
-      "w": 1,
-      "color": "$slot"
-     },
-     "when": "!usb"
-    },
-    {
-     "type": "rect",
-     "align": "top_left",
-     "x": 218,
-     "y": 13,
-     "w": 2,
-     "h": 5,
-     "color": "$slot",
-     "when": "!usb"
-    },
-    {
-     "type": "rect",
-     "align": "top_left",
-     "x": 198,
-     "y": 12,
-     "w": 13,
-     "h": 7,
-     "color": "$slot",
-     "when": "!usb"
-    },
-    {
-     "type": "icon",
-     "name": "wifi_off",
-     "align": "top_left",
-     "x": 12,
-     "y": 10,
-     "size": 18,
+     "y": 14,
+     "size": 22,
      "color": "$warn",
      "when": "!link"
     }

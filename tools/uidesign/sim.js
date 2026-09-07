@@ -304,7 +304,48 @@ function drawIcon(ctx, wdg) {
   ctx.lineWidth = Math.max(1, s / 10);
   ctx.lineCap = 'round';
 
-  if (name === 'bell') {
+  if (name === 'drone') {
+    // Шахед: дельта-крило з характерним зламом і хвостове оперення.
+    ctx.beginPath();
+    ctx.moveTo(s * .50, s * .10);
+    ctx.lineTo(s * .74, s * .62);
+    ctx.lineTo(s * .56, s * .56);
+    ctx.lineTo(s * .56, s * .90);
+    ctx.lineTo(s * .44, s * .90);
+    ctx.lineTo(s * .44, s * .56);
+    ctx.lineTo(s * .26, s * .62);
+    ctx.closePath();
+    ctx.fill();
+  } else if (name === 'missile') {
+    // Крилата: видовжений корпус, гострий ніс, крила посередині.
+    ctx.beginPath();
+    ctx.moveTo(s * .50, s * .06);
+    ctx.quadraticCurveTo(s * .62, s * .28, s * .62, s * .50);
+    ctx.lineTo(s * .86, s * .70);
+    ctx.lineTo(s * .62, s * .66);
+    ctx.lineTo(s * .62, s * .86);
+    ctx.lineTo(s * .50, s * .96);
+    ctx.lineTo(s * .38, s * .86);
+    ctx.lineTo(s * .38, s * .66);
+    ctx.lineTo(s * .14, s * .70);
+    ctx.lineTo(s * .38, s * .50);
+    ctx.quadraticCurveTo(s * .38, s * .28, s * .50, s * .06);
+    ctx.fill();
+  } else if (name === 'ballistic') {
+    // Балістична: крута низхідна траєкторія з вістрям — саме траєкторія, а не
+    // корпус, відрізняє її від крилатої на такому розмірі.
+    ctx.lineWidth = Math.max(2, s / 9);
+    ctx.beginPath();
+    ctx.moveTo(s * .10, s * .12);
+    ctx.quadraticCurveTo(s * .62, s * .14, s * .74, s * .74);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(s * .78, s * .94);
+    ctx.lineTo(s * .56, s * .68);
+    ctx.lineTo(s * .92, s * .60);
+    ctx.closePath();
+    ctx.fill();
+  } else if (name === 'bell') {
     // Будильник. Купол, підошва, язичок — контуром, бо на панелі це буде
     // однобітний гліф MDI, залитий одним кольором.
     ctx.lineWidth = Math.max(1.5, s / 9);
